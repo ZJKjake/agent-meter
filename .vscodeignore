@@ -1,0 +1,12 @@
+.vscode/
+.github/
+test/
+src/
+tsconfig.json
+esbuild.js
+scripts/
+**/*.map
+*.ts
+.gitignore
+logoagentmeterv1.png
+agentmeterlogov2.png

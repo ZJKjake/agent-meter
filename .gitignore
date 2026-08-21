@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Logs
 logs
 *.log
@@ -141,3 +142,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+=======
+node_modules/
+dist/
+*.vsix
+.DS_Store
+
+>>>>>>> 2ea5cb2 (feat: prepare AgentMeter 0.1.1 for secure Open VSX release)

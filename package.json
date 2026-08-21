@@ -1,0 +1,180 @@
+{
+  "name": "agentmeter",
+  "displayName": "AgentMeter",
+  "description": "Track AI coding tool usage, quotas, and remaining limits directly from your editor.",
+  "version": "0.1.1",
+
+  "publisher": "agentmeter",
+  "author": "zjkjake",
+  "license": "MIT",
+
+  "icon": "media/icon.png",
+
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZJKjake/agent-meter"
+  },
+
+  "homepage": "https://github.com/ZJKjake/agent-meter#readme",
+
+  "bugs": {
+    "url": "https://github.com/ZJKjake/agent-meter/issues"
+  },
+
+  "galleryBanner": {
+    "color": "#0F172A",
+    "theme": "dark"
+  },
+
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+
+  "categories": [
+    "Other",
+    "Productivity",
+    "Developer Tools"
+  ],
+
+  "keywords": [
+    "ai",
+    "ai coding",
+    "cursor",
+    "cursor ai",
+    "claude",
+    "claude code",
+    "codex",
+    "openai",
+    "llm",
+    "token",
+    "quota",
+    "usage",
+    "developer tools",
+    "coding assistant"
+  ],
+
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:agentmeter.focus",
+    "onCommand:agentmeter.refresh",
+    "onView:agentmeter.dashboard"
+  ],
+
+  "main": "./dist/extension.js",
+
+  "contributes": {
+    "icons": {
+      "agentmeter-logo": {
+        "description": "AgentMeter hourglass and usage pulse logo",
+        "default": {
+          "fontPath": "media/agentmeter-icons.woff",
+          "fontCharacter": "\\F101"
+        }
+      }
+    },
+
+    "colors": [
+      {
+        "id": "agentmeter.statusBarForeground",
+        "description": "Foreground color for AgentMeter's status bar summary.",
+        "defaults": {
+          "dark": "#8CCFF0",
+          "light": "#216F91",
+          "highContrast": "#B8E7FF",
+          "highContrastLight": "#075A7A"
+        }
+      }
+    ],
+
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentmeter",
+          "title": "AgentMeter",
+          "icon": "media/agentmeter.svg"
+        }
+      ]
+    },
+
+    "views": {
+      "agentmeter": [
+        {
+          "id": "agentmeter.dashboard",
+          "name": "Usage",
+          "type": "webview",
+          "icon": "media/agentmeter.svg"
+        }
+      ]
+    },
+
+    "commands": [
+      {
+        "command": "agentmeter.refresh",
+        "title": "AgentMeter: Refresh Usage",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentmeter.focus",
+        "title": "AgentMeter: Show Dashboard"
+      },
+      {
+        "command": "agentmeter.configureClaudeCode",
+        "title": "AgentMeter: Configure Claude Code"
+      },
+      {
+        "command": "agentmeter.configureCursor",
+        "title": "AgentMeter: Configure Cursor (Experimental)"
+      },
+      {
+        "command": "agentmeter.configureCodex",
+        "title": "AgentMeter: Configure Codex"
+      },
+      {
+        "command": "agentmeter.configureProviders",
+        "title": "AgentMeter: Configure Providers"
+      }
+    ],
+
+    "configuration": {
+      "title": "AgentMeter",
+      "properties": {
+        "agentmeter.cursor.experimentalPersonalUsage.enabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Opt in to AgentMeter's experimental/private Cursor personal-plan adapter. Reads Cursor's local access token read-only and sends it only to api2.cursor.sh over HTTPS."
+        }
+      }
+    },
+
+    "menus": {
+      "view/title": [
+        {
+          "command": "agentmeter.refresh",
+          "when": "view == agentmeter.dashboard",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+
+  "scripts": {
+    "build": "npm run check-types && node esbuild.js",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "watch": "npm run check-types -- --watch",
+    "watch:esbuild": "node esbuild.js --watch",
+    "package": "npm run build && node scripts/package.js package",
+    "publish:open-vsx": "node scripts/publish-open-vsx.js"
+  },
+
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.2",
+    "ovsx": "1.1.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
