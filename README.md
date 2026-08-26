@@ -12,6 +12,8 @@ The compact status bar looks like:
 
 The sidebar shows full provider names, every available quota window, reset
 times, data sources, provider states, and last-updated timestamps.
+Usage refreshes every five minutes by default and whenever the editor regains
+focus. The interval can be changed in AgentMeter settings.
 
 ## Provider support
 
@@ -133,7 +135,7 @@ src/
 Install a local build in Cursor:
 
 ```bash
-cursor --install-extension ./agentmeter-0.1.1.vsix
+cursor --install-extension ./agentmeter-0.1.2.vsix
 ```
 
 Publish to Open VSX from a trusted terminal or CI secret store:
