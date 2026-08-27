@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { DashboardStore } from './application/dashboardStore';
+import { RefreshScheduler } from './application/refreshScheduler';
 import { UsageService } from './application/usageService';
 import { ClaudeUsageCollector } from './infrastructure/collectors/claudeUsageCollector';
 import { CodexUsageCollector } from './infrastructure/collectors/codexUsageCollector';
@@ -17,15 +18,17 @@ import { AgentMeterViewProvider } from './presentation/sidebar/agentMeterViewPro
 import { StatusBarManager } from './presentation/statusBar/statusBarManager';
 
 export function activate(context: vscode.ExtensionContext): void {
+  const extensionVersion = getExtensionVersion(context);
   const usageRepository = new CollectorUsageRepository([
     new CursorPersonalUsageCollector({
+      clientVersion: extensionVersion,
       isEnabled: () =>
         vscode.workspace
           .getConfiguration('agentmeter')
           .get<boolean>('cursor.experimentalPersonalUsage.enabled', false),
     }),
     new ClaudeUsageCollector(),
-    new CodexUsageCollector(),
+    new CodexUsageCollector(undefined, undefined, extensionVersion),
   ]);
   const usageService = new UsageService(usageRepository);
   const dashboardStore = new DashboardStore(usageService);
@@ -34,9 +37,14 @@ export function activate(context: vscode.ExtensionContext): void {
     context.extensionUri,
   );
   const statusBarManager = new StatusBarManager(dashboardStore);
+  const refreshScheduler = new RefreshScheduler(
+    () => dashboardStore.refresh(),
+    getRefreshIntervalMs(),
+  );
 
   context.subscriptions.push(
     statusBarManager,
+    refreshScheduler,
     vscode.window.registerWebviewViewProvider(
       AgentMeterViewProvider.viewType,
       viewProvider,
@@ -66,7 +74,15 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('agentmeter')) {
+        if (event.affectsConfiguration('agentmeter.refreshIntervalMinutes')) {
+          refreshScheduler.restart(getRefreshIntervalMs());
+        }
         void dashboardStore.refresh().catch(() => undefined);
+      }
+    }),
+    vscode.window.onDidChangeWindowState((state) => {
+      if (state.focused) {
+        refreshScheduler.refreshNow();
       }
     }),
   );
@@ -75,6 +91,23 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
+
+function getExtensionVersion(context: vscode.ExtensionContext): string {
+  const version = context.extension.packageJSON.version;
+  return typeof version === 'string' && version.length > 0
+    ? version
+    : 'unknown';
+}
+
+function getRefreshIntervalMs(): number {
+  const configuredMinutes = vscode.workspace
+    .getConfiguration('agentmeter')
+    .get<number>('refreshIntervalMinutes', 5);
+  const minutes = Number.isFinite(configuredMinutes)
+    ? Math.min(60, Math.max(1, configuredMinutes))
+    : 5;
+  return minutes * 60_000;
+}
 
 async function configureClaudeCode(
   context: vscode.ExtensionContext,

@@ -32,6 +32,7 @@ export class CodexUsageCollector implements UsageCollector {
   public constructor(
     private readonly command = resolveCodexCommand(),
     private readonly timeoutMs = DEFAULT_TIMEOUT_MS,
+    private readonly clientVersion = 'unknown',
   ) {}
 
   public async collect(): Promise<ProviderSnapshot> {
@@ -47,7 +48,7 @@ export class CodexUsageCollector implements UsageCollector {
         clientInfo: {
           name: 'agentmeter',
           title: 'AgentMeter',
-          version: '0.1.1',
+          version: this.clientVersion,
         },
       });
       client.notify('initialized', {});

@@ -2,9 +2,9 @@
   "name": "agentmeter",
   "displayName": "AgentMeter",
   "description": "Track AI coding tool usage, quotas, and remaining limits directly from your editor.",
-  "version": "0.1.1",
+  "version": "0.1.2",
 
-  "publisher": "agentmeter",
+  "publisher": "zjkjake",
   "author": "zjkjake",
   "license": "MIT",
 
@@ -143,6 +143,14 @@
           "default": false,
           "scope": "application",
           "description": "Opt in to AgentMeter's experimental/private Cursor personal-plan adapter. Reads Cursor's local access token read-only and sends it only to api2.cursor.sh over HTTPS."
+        },
+        "agentmeter.refreshIntervalMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "scope": "application",
+          "description": "How often AgentMeter refreshes provider usage automatically, in minutes. Usage also refreshes when the editor regains focus."
         }
       }
     },
@@ -162,9 +170,10 @@
     "build": "npm run check-types && node esbuild.js",
     "check-types": "tsc --noEmit",
     "test": "vitest run",
+    "verify:manifest": "node scripts/verify-manifest.js",
     "watch": "npm run check-types -- --watch",
     "watch:esbuild": "node esbuild.js --watch",
-    "package": "npm run build && node scripts/package.js package",
+    "package": "npm run verify:manifest && npm run build && node scripts/package.js package",
     "publish:open-vsx": "node scripts/publish-open-vsx.js"
   },
 

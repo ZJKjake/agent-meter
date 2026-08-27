@@ -24,6 +24,7 @@ type CursorTokenReadResult =
 type CursorUsageRequest = (token: string) => Promise<unknown>;
 
 export interface CursorPersonalUsageCollectorOptions {
+  readonly clientVersion?: string;
   readonly isEnabled: () => boolean;
   readonly isCursorInstalled?: () => boolean;
   readonly readToken?: () => Promise<CursorTokenReadResult>;
@@ -64,7 +65,14 @@ export class CursorPersonalUsageCollector implements UsageCollector {
     private readonly options: CursorPersonalUsageCollectorOptions,
   ) {
     this.readToken = options.readToken ?? readCursorAccessToken;
-    this.requestUsage = options.requestUsage ?? requestCursorUsage;
+    this.requestUsage =
+      options.requestUsage ??
+      ((token) =>
+        requestCursorUsage(
+          token,
+          DEFAULT_TIMEOUT_MS,
+          options.clientVersion ?? 'unknown',
+        ));
     this.now = options.now ?? (() => new Date());
     this.isCursorInstalled =
       options.isCursorInstalled ??
@@ -308,6 +316,7 @@ export function parseCursorUsagePayload(
 async function requestCursorUsage(
   token: string,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  clientVersion = 'unknown',
 ): Promise<unknown> {
   if (
     CURSOR_USAGE_URL.protocol !== 'https:' ||
@@ -328,7 +337,7 @@ async function requestCursorUsage(
           'Connect-Protocol-Version': '1',
           'Content-Length': Buffer.byteLength(body),
           'Content-Type': 'application/json',
-          'User-Agent': 'AgentMeter/0.1.1',
+          'User-Agent': `AgentMeter/${clientVersion}`,
         },
       },
       (response) => {
