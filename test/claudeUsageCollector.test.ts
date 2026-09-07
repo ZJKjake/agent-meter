@@ -21,7 +21,7 @@ describe('ClaudeUsageCollector', () => {
       tool: 'claude-code',
       state: 'setup-required',
       records: [],
-      message: 'Setup required. Run AgentMeter: Configure Claude Code.',
+      message: 'Run AgentMeter: Configure Claude Code to show usage.',
     });
   });
 
@@ -54,7 +54,7 @@ describe('ClaudeUsageCollector', () => {
             windows: [
               {
                 id: 'five-hour',
-                usedPercentage: 25,
+                usedPercentage: 65,
                 resetAt: '2026-08-20T15:00:00.000Z',
               },
               {
@@ -82,7 +82,7 @@ describe('ClaudeUsageCollector', () => {
       expect(snapshot.records).toMatchObject([
         {
           id: 'claude-code:five-hour',
-          used: 25,
+          used: 65,
           limit: 100,
           unit: 'percent',
           source: 'local',
@@ -97,7 +97,7 @@ describe('ClaudeUsageCollector', () => {
     }
   });
 
-  it('marks old cache data as stale', async () => {
+  it('hides a 5-hour window that is not close to binding', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'agentmeter-claude-'));
     const cachePath = join(directory, 'usage.json');
 
@@ -108,10 +108,179 @@ describe('ClaudeUsageCollector', () => {
           {
             state: 'rate-limits',
             windows: [
-              { id: 'five-hour', usedPercentage: 80, resetAt: null },
+              {
+                id: 'five-hour',
+                usedPercentage: 25,
+                resetAt: '2026-08-20T15:00:00.000Z',
+              },
+              {
+                id: 'seven-day',
+                usedPercentage: 40,
+                resetAt: '2026-08-24T12:00:00.000Z',
+              },
             ],
           },
-          new Date('2026-08-20T10:00:00.000Z'),
+          new Date('2026-08-20T12:00:00.000Z'),
+        ),
+      );
+
+      const snapshot = await new ClaudeUsageCollector(
+        cachePath,
+        15 * 60 * 1_000,
+        () => new Date('2026-08-20T12:05:00.000Z'),
+      ).collect();
+
+      expect(snapshot.records).toMatchObject([
+        { id: 'claude-code:seven-day', isHeadline: true },
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps a quiet 5-hour window when it is the only reading', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'agentmeter-claude-'));
+    const cachePath = join(directory, 'usage.json');
+
+    try {
+      await writeClaudeUsageCache(
+        cachePath,
+        createClaudeUsageCache(
+          {
+            state: 'rate-limits',
+            windows: [
+              {
+                id: 'five-hour',
+                usedPercentage: 5,
+                resetAt: '2026-08-20T15:00:00.000Z',
+              },
+            ],
+          },
+          new Date('2026-08-20T12:00:00.000Z'),
+        ),
+      );
+
+      const snapshot = await new ClaudeUsageCollector(
+        cachePath,
+        15 * 60 * 1_000,
+        () => new Date('2026-08-20T12:05:00.000Z'),
+      ).collect();
+
+      expect(snapshot.records).toMatchObject([
+        { id: 'claude-code:five-hour', used: 5, isHeadline: true },
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('judges provider staleness across every window, not only the shown ones', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'agentmeter-claude-'));
+    const cachePath = join(directory, 'usage.json');
+
+    try {
+      await writeClaudeUsageCache(
+        cachePath,
+        createClaudeUsageCache(
+          {
+            state: 'rate-limits',
+            windows: [
+              {
+                id: 'five-hour',
+                usedPercentage: 10,
+                resetAt: '2026-08-24T15:00:00.000Z',
+              },
+              {
+                id: 'seven-day',
+                usedPercentage: 40,
+                resetAt: '2026-08-24T12:00:00.000Z',
+              },
+            ],
+          },
+          new Date('2026-08-20T12:00:00.000Z'),
+        ),
+      );
+
+      // The quiet 5-hour window is hidden but has not reset, so the provider
+      // is still live even though the one shown window has rolled over.
+      const snapshot = await new ClaudeUsageCollector(
+        cachePath,
+        15 * 60 * 1_000,
+        () => new Date('2026-08-24T13:00:00.000Z'),
+      ).collect();
+
+      expect(snapshot).toMatchObject({ state: 'available', message: null });
+      expect(snapshot.records).toMatchObject([
+        { id: 'claude-code:seven-day', isStale: true },
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('hides a 5-hour window that has already reset', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'agentmeter-claude-'));
+    const cachePath = join(directory, 'usage.json');
+
+    try {
+      await writeClaudeUsageCache(
+        cachePath,
+        createClaudeUsageCache(
+          {
+            state: 'rate-limits',
+            windows: [
+              {
+                id: 'five-hour',
+                usedPercentage: 80,
+                resetAt: '2026-08-20T15:00:00.000Z',
+              },
+              {
+                id: 'seven-day',
+                usedPercentage: 40,
+                resetAt: '2026-08-24T12:00:00.000Z',
+              },
+            ],
+          },
+          new Date('2026-08-20T12:00:00.000Z'),
+        ),
+      );
+
+      // A day later the 5-hour window has rolled over, so its 80% describes
+      // usage the window no longer holds and would raise a false alarm.
+      const snapshot = await new ClaudeUsageCollector(
+        cachePath,
+        15 * 60 * 1_000,
+        () => new Date('2026-08-21T12:00:00.000Z'),
+      ).collect();
+
+      expect(snapshot).toMatchObject({ state: 'available', message: null });
+      expect(snapshot.records).toMatchObject([
+        { id: 'claude-code:seven-day', isStale: false, isHeadline: true },
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('marks the provider stale once every window has reset', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'agentmeter-claude-'));
+    const cachePath = join(directory, 'usage.json');
+
+    try {
+      await writeClaudeUsageCache(
+        cachePath,
+        createClaudeUsageCache(
+          {
+            state: 'rate-limits',
+            windows: [
+              {
+                id: 'five-hour',
+                usedPercentage: 80,
+                resetAt: '2026-08-20T15:00:00.000Z',
+              },
+            ],
+          },
+          new Date('2026-08-20T12:00:00.000Z'),
         ),
       );
 
@@ -119,12 +288,49 @@ describe('ClaudeUsageCollector', () => {
         new ClaudeUsageCollector(
           cachePath,
           15 * 60 * 1_000,
-          () => new Date('2026-08-20T12:00:00.000Z'),
+          () => new Date('2026-08-28T12:00:00.000Z'),
         ).collect(),
       ).resolves.toMatchObject({
         state: 'stale',
-        message: 'Claude Code usage cache is stale. Open Claude Code to refresh it.',
+        message:
+          'Every Claude Code window has reset since this was read. Open Claude Code to refresh it.',
       });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps a cache older than the refresh interval usable', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'agentmeter-claude-'));
+    const cachePath = join(directory, 'usage.json');
+
+    try {
+      await writeClaudeUsageCache(
+        cachePath,
+        createClaudeUsageCache(
+          {
+            state: 'rate-limits',
+            windows: [
+              {
+                id: 'seven-day',
+                usedPercentage: 40,
+                resetAt: '2026-08-24T12:00:00.000Z',
+              },
+            ],
+          },
+          new Date('2026-08-20T12:00:00.000Z'),
+        ),
+      );
+
+      // Claude only writes the cache while it renders a status line, so age
+      // alone says nothing. Two hours on, the weekly figure still stands.
+      await expect(
+        new ClaudeUsageCollector(
+          cachePath,
+          15 * 60 * 1_000,
+          () => new Date('2026-08-20T14:00:00.000Z'),
+        ).collect(),
+      ).resolves.toMatchObject({ state: 'available', message: null });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

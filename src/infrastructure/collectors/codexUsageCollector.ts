@@ -7,8 +7,11 @@ import {
   UsageCollector,
   UsageRecord,
 } from '../../domain/usage';
+import { markHeadline } from './quotaHeadline';
 
 const DEFAULT_TIMEOUT_MS = 8_000;
+const DEFAULT_CANONICAL_LIMIT_ID = 'codex';
+const WINDOW_IDS = ['primary', 'secondary'] as const;
 
 interface JsonRpcResponse {
   readonly id?: number;
@@ -25,6 +28,14 @@ interface PendingRequest {
 }
 
 type JsonObject = Record<string, unknown>;
+
+/** One Codex rate-limit pool, such as the general limit or a model limit. */
+interface RateLimitBucket {
+  readonly id: string;
+  readonly name: string | null;
+  readonly value: JsonObject;
+  readonly isCanonical: boolean;
+}
 
 export class CodexUsageCollector implements UsageCollector {
   public readonly tool = 'codex' as const;
@@ -212,65 +223,135 @@ class JsonRpcClient {
   }
 }
 
+/**
+ * Codex reports a general limit plus any number of model-specific limits, and
+ * several of them can share a window length.
+ *
+ * Only the general limit is reported. A model limit is a sub-limit of that
+ * same plan allowance rather than a budget of its own, so listing it beside
+ * the general limit invites the reader to add up quotas that overlap. That
+ * leaves Codex with the two windows it actually meters against.
+ */
 export function parseRateLimitRecords(value: unknown): readonly UsageRecord[] {
   const result = asObject(value);
   if (!result) {
     return [];
   }
 
-  const buckets = getBuckets(result);
-  const records: UsageRecord[] = [];
+  const canonicalLimitId = getCanonicalLimitId(result);
+  const buckets = getBuckets(result, canonicalLimitId);
+  const bucket =
+    buckets.find((candidate) => candidate.isCanonical) ?? buckets[0];
 
-  for (const bucket of buckets) {
-    appendWindow(records, bucket.id, 'primary', bucket.value.primary);
-    appendWindow(records, bucket.id, 'secondary', bucket.value.secondary);
+  if (!bucket) {
+    return [];
   }
 
-  return records;
+  const updatedAt = new Date();
+  const records = WINDOW_IDS.flatMap((windowId) => {
+    const record = toRecord(bucket, windowId, updatedAt);
+    return record ? [record] : [];
+  });
+
+  return markHeadline(records);
 }
 
-function getBuckets(result: JsonObject): readonly { id: string; value: JsonObject }[] {
-  const byLimitId = asObject(result.rateLimitsByLimitId);
-  if (byLimitId) {
-    return Object.entries(byLimitId).flatMap(([id, value]) => {
-      const bucket = asObject(value);
-      return bucket ? [{ id, value: bucket }] : [];
-    });
-  }
-
+function getCanonicalLimitId(result: JsonObject): string {
   const rateLimits = asObject(result.rateLimits);
-  return rateLimits ? [{ id: 'codex', value: rateLimits }] : [];
+  return (
+    asNonEmptyString(rateLimits?.limitId) ?? DEFAULT_CANONICAL_LIMIT_ID
+  );
 }
 
-function appendWindow(
-  records: UsageRecord[],
-  bucketId: string,
-  windowId: string,
-  value: unknown,
-): void {
-  const window = asObject(value);
+function getBuckets(
+  result: JsonObject,
+  canonicalLimitId: string,
+): readonly RateLimitBucket[] {
+  const byLimitId = asObject(result.rateLimitsByLimitId) ?? {};
+  const buckets = new Map<string, RateLimitBucket>();
+
+  for (const [id, value] of Object.entries(byLimitId)) {
+    const bucket = asObject(value);
+    if (bucket) {
+      buckets.set(id, toBucket(id, bucket, canonicalLimitId));
+    }
+  }
+
+  // Top-level `rateLimits` is the backward-compatible view of the canonical
+  // limit. Overwriting the keyed copy keeps both views from rendering twice.
+  const rateLimits = asObject(result.rateLimits);
+  if (rateLimits) {
+    buckets.set(
+      canonicalLimitId,
+      toBucket(canonicalLimitId, rateLimits, canonicalLimitId),
+    );
+  }
+
+  return [...buckets.values()].sort(compareBuckets);
+}
+
+/**
+ * Canonical limit first, then limit id. Never response order, so reordered
+ * responses cannot change what the status bar shows.
+ */
+function compareBuckets(
+  left: RateLimitBucket,
+  right: RateLimitBucket,
+): number {
+  if (left.isCanonical !== right.isCanonical) {
+    return left.isCanonical ? -1 : 1;
+  }
+
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+}
+
+function toBucket(
+  id: string,
+  value: JsonObject,
+  canonicalLimitId: string,
+): RateLimitBucket {
+  return {
+    id,
+    name: asNonEmptyString(value.limitName),
+    value,
+    isCanonical: id === canonicalLimitId,
+  };
+}
+
+function toRecord(
+  bucket: RateLimitBucket,
+  windowId: (typeof WINDOW_IDS)[number],
+  updatedAt: Date,
+): UsageRecord | null {
+  const window = asObject(bucket.value[windowId]);
   const usedPercent = asFiniteNumber(window?.usedPercent);
   if (!window || usedPercent === null) {
-    return;
+    return null;
   }
 
   const durationMinutes = asFiniteNumber(window.windowDurationMins);
   const resetSeconds = asFiniteNumber(window.resetsAt);
 
-  records.push({
-    id: `${bucketId}:${windowId}`,
+  return {
+    id: `${bucket.id}:${windowId}`,
     tool: 'codex',
     used: usedPercent,
     limit: 100,
     unit: 'percent',
+    // The general limit is the only pool reported, so it needs no heading to
+    // tell it apart. A name is only useful in the fallback below, where a
+    // model limit stands in because Codex sent no general limit at all.
+    scopeLabel: bucket.isCanonical ? null : (bucket.name ?? bucket.id),
     periodLabel: getWindowLabel(durationMinutes),
+    isHeadline: false,
+    isStale: false,
     resetAt:
       resetSeconds === null || resetSeconds <= 0
         ? null
         : new Date(resetSeconds * 1_000),
-    updatedAt: new Date(),
+    updatedAt,
     source: 'local',
-  });
+  };
 }
 
 function getWindowLabel(durationMinutes: number | null): string {
@@ -301,6 +382,10 @@ function asObject(value: unknown): JsonObject | null {
 
 function asFiniteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function isCommandMissing(error: unknown): boolean {

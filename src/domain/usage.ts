@@ -36,7 +36,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   {
     id: 'claude-code',
     name: 'Claude Code',
-    description: 'Agentic coding in your terminal',
+    description: 'Anthropic coding agent',
   },
   {
     id: 'codex',
@@ -48,6 +48,10 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
 /**
  * A normalized usage record. Collectors for each provider should map their
  * native quota response into this shape before it reaches the UI.
+ *
+ * A provider may report several independent quota pools, and each pool may
+ * report several windows. `scopeLabel` names the pool and `periodLabel` names
+ * the window, so two pools that share a window length stay distinguishable.
  */
 export interface UsageRecord {
   readonly id: string;
@@ -55,7 +59,25 @@ export interface UsageRecord {
   readonly used: number | null;
   readonly limit: QuotaLimit;
   readonly unit: UsageUnit;
+  /**
+   * The quota pool this window belongs to, such as a model-specific Codex
+   * limit or a Cursor model pool. Null when the provider reports one pool.
+   */
+  readonly scopeLabel: string | null;
   readonly periodLabel: string;
+  /**
+   * Marks the single record that represents this provider in compact
+   * surfaces. Collectors choose it from quota meaning so the presentation
+   * layer never has to infer it from array order.
+   */
+  readonly isHeadline: boolean;
+  /**
+   * Set when the window this record describes has reset since the value was
+   * read, which happens for providers that push usage instead of being
+   * polled. The value is kept so the user still sees the last known figure,
+   * but it no longer describes the window that is running now.
+   */
+  readonly isStale: boolean;
   readonly resetAt: Date | null;
   readonly updatedAt: Date;
   readonly source: 'experimental-local' | 'local' | 'mock';
@@ -77,13 +99,28 @@ export interface UsageRepository {
   getUsage(): Promise<readonly ProviderSnapshot[]>;
 }
 
+/** When each provider was first seen reporting, as epoch milliseconds. */
+export type ProviderFirstReportedAt = Readonly<Partial<Record<AiToolId, number>>>;
+
+/**
+ * Remembers when a provider first reported, so card order can follow the
+ * order the user set their providers up in and stay put across sessions.
+ */
+export interface ProviderOrderStore {
+  read(): ProviderFirstReportedAt;
+  write(value: ProviderFirstReportedAt): Promise<void>;
+}
+
 export interface UsageQuotaModel {
   readonly id: string;
   readonly used: number | null;
   readonly limit: QuotaLimit;
   readonly remaining: number | 'unlimited' | null;
   readonly unit: UsageUnit;
+  readonly scopeLabel: string | null;
   readonly periodLabel: string;
+  readonly isHeadline: boolean;
+  readonly isStale: boolean;
   readonly resetAt: string | null;
   readonly updatedAt: string | null;
   /** Percentage of the quota that has been consumed. */

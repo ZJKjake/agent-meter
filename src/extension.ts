@@ -2,6 +2,10 @@ import * as vscode from 'vscode';
 import { DashboardStore } from './application/dashboardStore';
 import { RefreshScheduler } from './application/refreshScheduler';
 import { UsageService } from './application/usageService';
+import {
+  ProviderFirstReportedAt,
+  ProviderOrderStore,
+} from './domain/usage';
 import { ClaudeUsageCollector } from './infrastructure/collectors/claudeUsageCollector';
 import { CodexUsageCollector } from './infrastructure/collectors/codexUsageCollector';
 import { CursorPersonalUsageCollector } from './infrastructure/collectors/cursorPersonalUsageCollector';
@@ -30,7 +34,10 @@ export function activate(context: vscode.ExtensionContext): void {
     new ClaudeUsageCollector(),
     new CodexUsageCollector(undefined, undefined, extensionVersion),
   ]);
-  const usageService = new UsageService(usageRepository);
+  const usageService = new UsageService(
+    usageRepository,
+    createProviderOrderStore(context),
+  );
   const dashboardStore = new DashboardStore(usageService);
   const viewProvider = new AgentMeterViewProvider(
     dashboardStore,
@@ -91,6 +98,24 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {}
+
+/**
+ * Card order follows the order providers were set up in, so it is kept in
+ * global state rather than per workspace: the same providers back every
+ * window, and cards reshuffling between projects would read as a fault.
+ */
+function createProviderOrderStore(
+  context: vscode.ExtensionContext,
+): ProviderOrderStore {
+  const key = 'agentmeter.providerOrder.v1';
+
+  return {
+    read: () => context.globalState.get<ProviderFirstReportedAt>(key, {}),
+    write: async (value) => {
+      await context.globalState.update(key, value);
+    },
+  };
+}
 
 function getExtensionVersion(context: vscode.ExtensionContext): string {
   const version = context.extension.packageJSON.version;

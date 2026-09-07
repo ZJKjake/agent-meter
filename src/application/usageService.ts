@@ -1,5 +1,7 @@
 import {
   DashboardModel,
+  ProviderFirstReportedAt,
+  ProviderOrderStore,
   TOOL_DEFINITIONS,
   UsageCardModel,
   UsageQuotaModel,
@@ -12,8 +14,15 @@ import {
 
 const ATTENTION_REMAINING_THRESHOLD = 20;
 
+/** Pinned to the top: it is the editor the extension runs inside. */
+const PINNED_TOOL = 'cursor';
+
 export class UsageService {
-  public constructor(private readonly repository: UsageRepository) {}
+  public constructor(
+    private readonly repository: UsageRepository,
+    private readonly orderStore?: ProviderOrderStore,
+    private readonly now: () => number = () => Date.now(),
+  ) {}
 
   public async getDashboard(): Promise<DashboardModel> {
     const snapshots = await this.repository.getUsage();
@@ -46,9 +55,72 @@ export class UsageService {
     );
 
     return {
-      cards,
+      cards: await this.sortCards(cards),
       generatedAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Cursor leads, then the providers the user has actually set up, in the
+   * order they first reported. Ordering by setup rather than by a fixed list
+   * puts the cards someone uses above the ones they have not touched, and
+   * recording the moment once keeps a card from moving again afterwards.
+   * Providers yet to report hold their declared order behind those.
+   */
+  private async sortCards(
+    cards: readonly UsageCardModel[],
+  ): Promise<readonly UsageCardModel[]> {
+    const firstReportedAt = await this.recordReportingProviders(cards);
+    const declaredOrder = new Map(
+      cards.map((card, index) => [card.tool, index] as const),
+    );
+
+    return [...cards].sort((left, right) => {
+      if (left.tool === PINNED_TOOL || right.tool === PINNED_TOOL) {
+        return left.tool === PINNED_TOOL ? -1 : 1;
+      }
+
+      const leftAt = firstReportedAt[left.tool];
+      const rightAt = firstReportedAt[right.tool];
+
+      if (leftAt !== rightAt) {
+        // An unrecorded provider has never reported, so it sorts last.
+        return (leftAt ?? Infinity) - (rightAt ?? Infinity);
+      }
+
+      return (declaredOrder.get(left.tool) ?? 0) - (declaredOrder.get(right.tool) ?? 0);
+    });
+  }
+
+  private async recordReportingProviders(
+    cards: readonly UsageCardModel[],
+  ): Promise<ProviderFirstReportedAt> {
+    if (!this.orderStore) {
+      return {};
+    }
+
+    const stored = this.orderStore.read();
+    const added = cards.filter(
+      (card) =>
+        card.tool !== PINNED_TOOL &&
+        this.isReportingState(card.providerState) &&
+        stored[card.tool] === undefined,
+    );
+
+    if (added.length === 0) {
+      return stored;
+    }
+
+    // Providers that first report in the same pass are separated by their
+    // declared order, so two arriving together still get a stable sequence.
+    const now = this.now();
+    const updated = { ...stored };
+    added.forEach((card, index) => {
+      updated[card.tool] = now + index;
+    });
+
+    await this.orderStore.write(updated);
+    return updated;
   }
 
   private toCardModel(
@@ -78,7 +150,7 @@ export class UsageService {
             : snapshot.records.some(
                   (record) => record.source === 'experimental-local',
                 )
-              ? 'Experimental private adapter'
+              ? 'Cursor API'
               : 'Local collector'
           : this.getProviderStateLabel(providerState),
     };
@@ -93,7 +165,10 @@ export class UsageService {
       limit: record.limit,
       remaining: metrics.remaining,
       unit: record.unit,
+      scopeLabel: record.scopeLabel,
       periodLabel: record.periodLabel,
+      isHeadline: record.isHeadline,
+      isStale: record.isStale,
       resetAt: this.toIsoString(record.resetAt),
       updatedAt: this.toIsoString(record.updatedAt),
       usedPercentage: metrics.usedPercentage,

@@ -227,23 +227,21 @@ export function getWebviewContent(
       align-items: center;
       border: 1px solid var(--vscode-widget-border);
       border-radius: 7px;
-      color: var(--vscode-textLink-foreground);
+      /* Every mark is drawn monochrome in the foreground token, so all three
+         stay consistent with each other and legible in either theme. */
+      color: var(--vscode-foreground);
       display: inline-flex;
       flex: 0 0 auto;
-      font-size: 9px;
-      font-weight: 750;
       height: 29px;
       justify-content: center;
-      letter-spacing: -0.02em;
       width: 29px;
     }
 
-    .provider-mark.claude-code {
-      color: var(--vscode-charts-orange, var(--vscode-textLink-foreground));
-    }
-
-    .provider-mark.codex {
-      color: var(--vscode-charts-green, var(--vscode-textLink-foreground));
+    .provider-mark svg {
+      display: block;
+      fill: currentColor;
+      height: 16px;
+      width: 16px;
     }
 
     .tool-name {
@@ -354,10 +352,28 @@ export function getWebviewContent(
       font-weight: 650;
     }
 
+    .quota-stale {
+      border: 1px solid var(--vscode-widget-border, currentColor);
+      border-radius: 3px;
+      font-size: 9px;
+      letter-spacing: 0.04em;
+      margin-left: 5px;
+      opacity: 0.75;
+      padding: 0 3px;
+      text-transform: uppercase;
+    }
+
+    /*
+     * The track must not use --vscode-progressBar-background: that token is
+     * VS Code's blue progress fill, so pairing it with the blue fill below
+     * made a bar at any level read as solid blue. A neutral track is what
+     * makes the filled fraction legible.
+     */
     .progress-track {
-      background: var(--vscode-progressBar-background);
+      background: color-mix(in srgb, var(--vscode-foreground) 18%, transparent);
+      border: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
       border-radius: 999px;
-      height: 5px;
+      height: 9px;
       overflow: hidden;
       width: 100%;
     }
@@ -366,11 +382,18 @@ export function getWebviewContent(
       opacity: 0.55;
     }
 
+    /*
+     * Starts empty on purpose. The width arrives from the script, and a bar
+     * left at its natural size would stretch to fill the track and read as a
+     * full quota, so a failure to apply it would look like healthy data
+     * rather than a bug.
+     */
     .progress-bar {
       background: var(--vscode-textLink-foreground);
       border-radius: inherit;
       height: 100%;
       transition: width 160ms ease;
+      width: 0;
     }
 
     .progress-bar.attention {
@@ -411,6 +434,12 @@ export function getWebviewContent(
 
     .secondary-quota {
       padding-top: 9px;
+    }
+
+    .quota-scope {
+      font-size: 10px;
+      font-weight: 650;
+      padding-top: 10px;
     }
 
     .provider-note {
@@ -637,6 +666,56 @@ export function getWebviewContent(
       }).format(date);
     }
 
+    /**
+     * Time left in the window. Paired with the remaining percentage this is
+     * what makes a burn rate judgeable: 90% left with 6 days to go reads very
+     * differently from 90% left with 2 hours to go.
+     */
+    function formatResetCountdown(value) {
+      if (!value) {
+        return 'Reset unavailable';
+      }
+
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return 'Reset unavailable';
+      }
+
+      const remainingMinutes = Math.floor((date.getTime() - Date.now()) / 60000);
+      if (remainingMinutes <= 0) {
+        return 'Resets now';
+      }
+      if (remainingMinutes < 60) {
+        return 'Resets in ' + remainingMinutes + 'm';
+      }
+      if (remainingMinutes < 1440) {
+        return 'Resets in ' + Math.floor(remainingMinutes / 60) + 'h';
+      }
+
+      return 'Resets in ' + Math.floor(remainingMinutes / 1440) + 'd';
+    }
+
+    /**
+     * Providers that push usage instead of being polled can hand back a figure
+     * for a window that has since reset. The value stays visible because it is
+     * still the last thing the provider said, but it is marked so it is not
+     * read as the window running now.
+     */
+    function renderStaleBadge(quota) {
+      return quota.isStale
+        ? '<span class="quota-stale" title="Read before this window reset. Open the provider to refresh it.">stale</span>'
+        : '';
+    }
+
+    function renderResetLabel(className, quota) {
+      // The countdown is the readable value; the exact timestamp stays
+      // reachable on hover rather than competing for sidebar width.
+      return '<span' + (className ? ' class="' + className + '"' : '') +
+        ' title="' + escapeHtml(formatResetDate(quota.resetAt)) + '">' +
+        escapeHtml(formatResetCountdown(quota.resetAt)) +
+      '</span>';
+    }
+
     function formatUpdatedDate(value) {
       if (!value) {
         return 'Not refreshed yet';
@@ -698,8 +777,20 @@ export function getWebviewContent(
       return labels[state] || 'Unknown';
     }
 
+    /**
+     * Each provider's own mark, inlined so it needs no image source in the
+     * page's Content Security Policy. They are drawn in currentColor, which
+     * lets .provider-mark tint them per provider and keeps them legible in
+     * both light and dark themes.
+     */
     function getProviderMark(tool) {
-      return tool === 'cursor' ? 'C' : tool === 'claude-code' ? 'CC' : 'X';
+      const marks = {
+        'cursor': '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.503.131L1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"/></svg>',
+        'claude-code': '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4.714 15.956l4.718-2.648l.079-.23l-.08-.128h-.23l-.79-.048l-2.695-.073l-2.337-.097l-2.265-.122l-.57-.121l-.535-.704l.055-.353l.48-.321l.685.06l1.518.104l2.277.157l1.651.098l2.447.255h.389l.054-.158l-.133-.097l-.103-.098l-2.356-1.596l-2.55-1.688l-1.336-.972l-.722-.491L2 6.223l-.158-1.008l.656-.722l.88.06l.224.061l.893.686l1.906 1.476l2.49 1.833l.364.304l.146-.104l.018-.072l-.164-.274l-1.354-2.446l-1.445-2.49l-.644-1.032l-.17-.619a3 3 0 0 1-.103-.729L6.287.133L6.7 0l.995.134l.42.364l.619 1.415L9.735 4.14l1.555 3.03l.455.898l.243.832l.09.255h.159V9.01l.127-1.706l.237-2.095l.23-2.695l.08-.76l.376-.91l.747-.492l.583.28l.48.685l-.067.444l-.286 1.851l-.558 2.903l-.365 1.942h.213l.243-.242l.983-1.306l1.652-2.064l.728-.82l.85-.904l.547-.431h1.032l.759 1.129l-.34 1.166l-1.063 1.347l-.88 1.142l-1.263 1.7l-.79 1.36l.074.11l.188-.02l2.853-.606l1.542-.28l1.84-.315l.832.388l.09.395l-.327.807l-1.967.486l-2.307.462l-3.436.813l-.043.03l.049.061l1.548.146l.662.036h1.62l3.018.225l.79.522l.473.638l-.08.485l-1.213.62l-1.64-.389l-3.825-.91l-1.31-.329h-.183v.11l1.093 1.068l2.003 1.81l2.508 2.33l.127.578l-.321.455l-.34-.049l-2.204-1.657l-.85-.747l-1.925-1.62h-.127v.17l.443.649l2.343 3.521l.122 1.08l-.17.353l-.607.213l-.668-.122l-1.372-1.924l-1.415-2.168l-1.141-1.943l-.14.08l-.674 7.254l-.316.37l-.728.28l-.607-.461l-.322-.747l.322-1.476l.388-1.924l.316-1.53l.285-1.9l.17-.632l-.012-.042l-.14.018l-1.432 1.967l-2.18 2.945l-1.724 1.845l-.413.164l-.716-.37l.066-.662l.401-.589l2.386-3.036l1.439-1.882l.929-1.086l-.006-.158h-.055L4.138 18.56l-1.13.146l-.485-.456l.06-.746l.231-.243l1.907-1.312Z"/></svg>',
+        'codex': '<svg viewBox="0 0 256 260" aria-hidden="true"><path d="M239.184 106.203a64.72 64.72 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.72 64.72 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.67 64.67 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.77 64.77 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483m-97.56 136.338a48.4 48.4 0 0 1-31.105-11.255l1.535-.87l51.67-29.825a8.6 8.6 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601M37.158 197.93a48.35 48.35 0 0 1-5.781-32.589l1.534.921l51.722 29.826a8.34 8.34 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803M23.549 85.38a48.5 48.5 0 0 1 25.58-21.333v61.39a8.29 8.29 0 0 0 4.195 7.316l62.874 36.272l-21.845 12.636a.82.82 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405zm179.466 41.695l-63.08-36.63L161.73 77.86a.82.82 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.54 8.54 0 0 0-4.4-7.213m21.742-32.69l-1.535-.922l-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.72.72 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391zM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87l-51.67 29.825a8.6 8.6 0 0 0-4.246 7.367zm11.868-25.58L128.067 97.3l28.188 16.218v32.434l-28.086 16.218l-28.188-16.218z"/></svg>'
+      };
+
+      return marks[tool] || '';
     }
 
     function getProviderActionLabel(tool, state) {
@@ -723,9 +814,53 @@ export function getWebviewContent(
         '</div>';
       }
 
+      // The page's CSP names a nonce for styles, which blocks style
+      // attributes in markup. A bar written that way silently loses its width
+      // and, being a block element, fills its whole track, so every quota
+      // reads as full. The width travels as data instead and is applied
+      // through the CSSOM below, which the policy does allow.
       return '<div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + remainingPercentage + '" aria-label="' + escapeHtml(card.name) + ' remaining quota">' +
-        '<div class="progress-bar' + statusClass + '" style="width: ' + remainingPercentage + '%"></div>' +
+        '<div class="progress-bar' + statusClass + '" data-remaining="' + remainingPercentage + '"></div>' +
       '</div>';
+    }
+
+    function applyProgressWidths() {
+      const bars = cardsElement.querySelectorAll('.progress-bar[data-remaining]');
+      for (const bar of bars) {
+        bar.style.width = bar.getAttribute('data-remaining') + '%';
+      }
+    }
+
+    function formatQuotaLabel(quota) {
+      return quota.scopeLabel
+        ? quota.scopeLabel + ' · ' + quota.periodLabel
+        : quota.periodLabel;
+    }
+
+    function getHeadlineQuota(quotas) {
+      return quotas.filter(function(quota) { return quota.isHeadline; })[0] || quotas[0];
+    }
+
+    /**
+     * Providers can report several quota pools that share a window length, so
+     * rows are grouped by pool to keep identical window labels apart.
+     */
+    function groupQuotasByScope(quotas) {
+      const order = [];
+      const byScope = new Map();
+
+      quotas.forEach(function(quota) {
+        const scope = quota.scopeLabel || '';
+        if (!byScope.has(scope)) {
+          byScope.set(scope, []);
+          order.push(scope);
+        }
+        byScope.get(scope).push(quota);
+      });
+
+      return order.map(function(scope) {
+        return { scope: scope, quotas: byScope.get(scope) };
+      });
     }
 
     function getQuotaDetail(quota) {
@@ -758,10 +893,10 @@ export function getWebviewContent(
             '<span class="metric-value">' + metricValue + '</span>' +
             '<span class="metric-unit">' + metricUnit + '</span>' +
           '</div>' +
-          '<span class="reset-label">' + formatResetDate(quota.resetAt) + '</span>' +
+          renderResetLabel('reset-label', quota) +
         '</div>' +
         '<div class="quota-heading">' +
-          '<span class="quota-name">' + escapeHtml(quota.periodLabel) + '</span>' +
+          '<span class="quota-name">' + escapeHtml(formatQuotaLabel(quota)) + renderStaleBadge(quota) + '</span>' +
           '<span class="quota-percent">' + (remainingPercentage === null ? '—' : formatNumber(remainingPercentage) + '% left') + '</span>' +
         '</div>' +
         getProgressMarkup(card, quota) +
@@ -769,20 +904,51 @@ export function getWebviewContent(
       '</section>';
     }
 
-    function renderSecondaryQuota(card, quota) {
+    function renderSecondaryQuota(card, quota, label, hideReset) {
       const remainingPercentage = getRemainingPercentage(quota);
       const quotaDetail = getQuotaDetail(quota);
+      const meta = [];
+
+      if (quotaDetail) {
+        meta.push('<span>' + quotaDetail + '</span>');
+      }
+      if (!hideReset) {
+        meta.push(renderResetLabel('', quota));
+      }
+
       return '<div class="secondary-quota">' +
         '<div class="quota-heading">' +
-          '<span class="quota-name">' + escapeHtml(quota.periodLabel) + '</span>' +
+          '<span class="quota-name">' + escapeHtml(label) + renderStaleBadge(quota) + '</span>' +
           '<span class="quota-percent">' + (remainingPercentage === null ? '—' : formatNumber(remainingPercentage) + '% left') + '</span>' +
         '</div>' +
         getProgressMarkup(card, quota) +
-        '<div class="quota-meta">' +
-          (quotaDetail ? '<span>' + quotaDetail + '</span>' : '') +
-          '<span>' + formatResetDate(quota.resetAt) + '</span>' +
-        '</div>' +
+        (meta.length ? '<div class="quota-meta">' + meta.join('') + '</div>' : '') +
       '</div>';
+    }
+
+    /**
+     * Cursor meters both of its pools against one billing cycle, so every row
+     * would repeat the same countdown. When a card resets as a whole, the
+     * countdown on the leading row already covers every bar below it.
+     */
+    function sharesOneResetTime(quotas) {
+      return quotas.length > 1 && quotas.every(function(quota) {
+        return quota.resetAt === quotas[0].resetAt;
+      });
+    }
+
+    function renderQuotaGroup(card, group, hideReset) {
+      // A pool heading only earns its own line when it covers several windows.
+      if (group.scope && group.quotas.length > 1) {
+        return '<div class="quota-scope">' + escapeHtml(group.scope) + '</div>' +
+          group.quotas.map(function(quota) {
+            return renderSecondaryQuota(card, quota, quota.periodLabel, hideReset);
+          }).join('');
+      }
+
+      return group.quotas.map(function(quota) {
+        return renderSecondaryQuota(card, quota, formatQuotaLabel(quota), hideReset);
+      }).join('');
     }
 
     function renderSkeletons() {
@@ -801,10 +967,15 @@ export function getWebviewContent(
       const hasUsage = quotas.length > 0;
       const isCurrent = card.providerState === 'available' || card.providerState === 'mock';
       const isReporting = isCurrent || card.providerState === 'stale';
-      const primaryQuotaMarkup = hasUsage ? renderPrimaryQuota(card, quotas[0]) : '';
-      const secondaryQuotaMarkup = quotas.length > 1
-        ? '<div class="secondary-quotas">' + quotas.slice(1).map(function(quota) {
-            return renderSecondaryQuota(card, quota);
+      const headlineQuota = hasUsage ? getHeadlineQuota(quotas) : null;
+      const supportingQuotas = quotas.filter(function(quota) {
+        return quota !== headlineQuota;
+      });
+      const primaryQuotaMarkup = headlineQuota ? renderPrimaryQuota(card, headlineQuota) : '';
+      const hideRepeatedReset = sharesOneResetTime(card.quotas);
+      const secondaryQuotaMarkup = supportingQuotas.length
+        ? '<div class="secondary-quotas">' + groupQuotasByScope(supportingQuotas).map(function(group) {
+            return renderQuotaGroup(card, group, hideRepeatedReset);
           }).join('') + '</div>'
         : '';
       const noteMarkup = card.message && isReporting
@@ -883,6 +1054,7 @@ export function getWebviewContent(
       cardsElement.innerHTML = cards.length
         ? cards.map(renderProviderCard).join('')
         : '<div class="empty-state">No providers were found. Use setup to connect one.</div>';
+      applyProgressWidths();
       setRefreshing(false);
     }
 

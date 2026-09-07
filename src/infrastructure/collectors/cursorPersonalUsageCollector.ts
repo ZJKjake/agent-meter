@@ -8,6 +8,7 @@ import {
   UsageCollector,
   UsageRecord,
 } from '../../domain/usage';
+import { markHeadline } from './quotaHeadline';
 
 const CURSOR_USAGE_URL = new URL(
   'https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage',
@@ -15,6 +16,10 @@ const CURSOR_USAGE_URL = new URL(
 const TOKEN_STORAGE_KEY = 'cursorAuth/accessToken';
 const DEFAULT_TIMEOUT_MS = 8_000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+const OTHER_MODELS_POOL = 'Other Models pool';
+const CURSOR_MODELS_POOL = 'Cursor Models pool';
+const INCLUDED_PLAN_USAGE = 'Included plan usage';
+const BILLING_CYCLE_WINDOW = 'Billing cycle';
 
 type CursorTokenReadResult =
   | { readonly kind: 'found'; readonly token: string }
@@ -96,7 +101,7 @@ export class CursorPersonalUsageCollector implements UsageCollector {
         state: 'setup-required',
         records: [],
         message:
-          'Not connected. Enable the experimental/private Cursor adapter to read personal-plan usage.',
+          'Run AgentMeter: Configure Cursor to show personal-plan usage.',
       };
     }
 
@@ -141,12 +146,14 @@ export class CursorPersonalUsageCollector implements UsageCollector {
         throw new CursorAdapterError('schema');
       }
 
+      // A working provider needs no note. The opt-in dialog carries the full
+      // disclosure, and the card footer names the source on every refresh, so
+      // repeating it here only flags healthy data as something to worry about.
       return {
         tool: this.tool,
         state: 'available',
         records: parsed.records,
-        message:
-          'Experimental/private integration. Data is read locally and requested directly from Cursor over HTTPS.',
+        message: null,
       };
     } catch (error) {
       const kind =
@@ -258,7 +265,7 @@ export function parseCursorUsagePayload(
     records.push(
       percentageRecord(
         'cursor:primary',
-        'Other Models pool',
+        OTHER_MODELS_POOL,
         apiPercentUsed,
         resetAt,
         updatedAt,
@@ -268,7 +275,7 @@ export function parseCursorUsagePayload(
     records.push(
       percentageRecord(
         'cursor:primary',
-        'Included plan usage',
+        INCLUDED_PLAN_USAGE,
         totalPercentUsed,
         resetAt,
         updatedAt,
@@ -278,7 +285,7 @@ export function parseCursorUsagePayload(
     records.push(
       percentageRecord(
         'cursor:primary',
-        'Cursor Models pool',
+        CURSOR_MODELS_POOL,
         autoPercentUsed,
         resetAt,
         updatedAt,
@@ -286,11 +293,11 @@ export function parseCursorUsagePayload(
     );
   }
 
-  if (autoPercentUsed !== null && records[0]?.periodLabel !== 'Cursor Models pool') {
+  if (autoPercentUsed !== null && records[0]?.scopeLabel !== CURSOR_MODELS_POOL) {
     records.push(
       percentageRecord(
         'cursor:cursor-models',
-        'Cursor Models pool',
+        CURSOR_MODELS_POOL,
         autoPercentUsed,
         resetAt,
         updatedAt,
@@ -298,19 +305,11 @@ export function parseCursorUsagePayload(
     );
   }
 
-  if (totalPercentUsed !== null && records[0]?.periodLabel !== 'Included plan usage') {
-    records.push(
-      percentageRecord(
-        'cursor:overall',
-        'Included plan usage',
-        totalPercentUsed,
-        resetAt,
-        updatedAt,
-      ),
-    );
-  }
+  // `totalPercentUsed` is Cursor's roll-up across the pools above, not a pool
+  // of its own, so it is only used as a headline fallback and never reported
+  // as a bar beside the pools it already summarizes.
 
-  return { enabled: true, records };
+  return { enabled: true, records: markHeadline(records) };
 }
 
 async function requestCursorUsage(
@@ -476,7 +475,7 @@ function normalizeToken(value: string): string | null {
 
 function percentageRecord(
   id: string,
-  periodLabel: string,
+  scopeLabel: string,
   used: number,
   resetAt: Date | null,
   updatedAt: Date,
@@ -487,7 +486,10 @@ function percentageRecord(
     used,
     limit: 100,
     unit: 'percent',
-    periodLabel,
+    scopeLabel,
+    periodLabel: BILLING_CYCLE_WINDOW,
+    isHeadline: false,
+    isStale: false,
     resetAt,
     updatedAt,
     source: 'experimental-local',

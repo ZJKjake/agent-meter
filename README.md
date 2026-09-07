@@ -23,8 +23,9 @@ focus. The interval can be changed in AgentMeter settings.
   personal usage API.
 - **Claude Code:** official status-line JSON is sanitized into a local cache.
   Five-hour and seven-day limits are supported when Claude provides them.
-- **Codex:** the local Codex app-server reports all available rate-limit
-  windows. Authentication remains owned by the Codex CLI.
+- **Codex:** the local Codex app-server reports the general rate limit's
+  windows. Model-specific limits are read but not shown. Authentication
+  remains owned by the Codex CLI.
 
 A fresh installation never displays sample usage. Providers explicitly show
 `Connected`, `Setup required`, `Sign-in required`, `Unsupported`,
@@ -44,6 +45,41 @@ normalized value is used by the status bar, sidebar progress bars, tooltips,
 and provider details. The sidebar can still display multiple independent
 windows; AgentMeter does not average them.
 
+How many bars a provider shows depends on what it meters, and each bar is
+labeled with whatever distinguishes it from its siblings.
+
+Cursor splits one window across two pools, so it shows the Cursor Models and
+Other Models pools, labeled by pool. Codex meters one pool over its reported
+windows, labeled by window; plans currently expose a single weekly window, and
+a second appears on its own if Codex starts reporting one.
+
+Claude Code meters one pool over a 5-hour and a seven-day window. The weekly
+window is always shown, since it drains slowly enough to read days ahead. The
+5-hour window appears only once it is at least half spent: it is the limit
+that cuts a session off, but below that mark it competes for attention with
+the figure that matters. A 5-hour reading whose window has already reset is
+hidden as well, because it reports usage that window no longer holds and a
+high value there would raise a false alarm.
+
+Codex also reports model-specific limits, such as a per-model weekly cap. They
+are not shown. A model limit is a sub-limit of the same plan allowance rather
+than a budget of its own, so listing it beside the general limit would invite
+adding up quotas that overlap.
+
+The status bar has room for one number per provider, so it shows whichever bar
+is closest to running out — the constraint that will stop you first. When that
+is not the bar the provider leads with, the value is qualified, as in
+`Codex 4% (1-week)`, so a number that changes because a different window became
+binding does not read as noise.
+
+Reset times are shown as time remaining in the window, with the exact timestamp
+on hover.
+
+Claude Code pushes usage only while it renders a status line, so a cached
+figure can outlive the window it was read in. Any window that has reset since
+it was read keeps its last known value but is marked stale, and it never drives
+the compact value while a current figure exists.
+
 ## Configure providers
 
 Open the Command Palette and run `AgentMeter: Configure Providers`, or use the
@@ -61,9 +97,10 @@ When enabled, the adapter:
 - strictly validates Cursor's response and falls back to `—` if the private
   endpoint or schema changes.
 
-Cursor currently exposes separate Cursor Models and Other Models pools. The
-Other Models pool is the compact primary value when it is present; all
-reported pools appear in the sidebar. This adapter is not an official Cursor
+Cursor currently exposes separate Cursor Models and Other Models pools, and
+both appear in the sidebar. The Other Models pool is the compact primary value
+when it is present. Cursor's `totalPercentUsed` roll-up is not shown as a
+third bar, because it summarizes the two pools rather than adding a new one. This adapter is not an official Cursor
 API integration and can stop working without notice. Disable it at any time by
 running the same configuration command.
 

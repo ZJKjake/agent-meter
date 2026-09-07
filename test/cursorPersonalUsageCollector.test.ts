@@ -60,29 +60,51 @@ describe('CursorPersonalUsageCollector', () => {
       updatedAt,
     );
 
+    // `totalPercentUsed` summarizes the two pools above, so it is not
+    // reported as a third bar next to them.
     expect(parsed?.records).toMatchObject([
       {
         id: 'cursor:primary',
         used: 19.392,
         limit: 100,
-        periodLabel: 'Other Models pool',
+        scopeLabel: 'Other Models pool',
+        periodLabel: 'Billing cycle',
+        isHeadline: true,
         source: 'experimental-local',
       },
       {
         id: 'cursor:cursor-models',
         used: 0.5135,
-        periodLabel: 'Cursor Models pool',
-      },
-      {
-        id: 'cursor:overall',
-        used: 4.2892,
-        periodLabel: 'Included plan usage',
+        scopeLabel: 'Cursor Models pool',
+        isHeadline: false,
       },
     ]);
     expect(parsed?.records[0].updatedAt).toEqual(updatedAt);
     expect(parsed?.records[0].resetAt?.toISOString()).toBe(
       '2026-09-16T04:13:35.000Z',
     );
+  });
+
+  it('headlines whichever pool is closest to running out', () => {
+    const parsed = parseCursorUsagePayload(
+      {
+        enabled: true,
+        billingCycleEnd: '1789532015000',
+        planUsage: {
+          apiPercentUsed: 12,
+          autoPercentUsed: 88,
+          totalPercentUsed: 40,
+        },
+      },
+      new Date('2026-08-21T15:00:00.000Z'),
+    );
+
+    // Cursor lists Other Models first, but a nearly spent Cursor Models pool
+    // is the constraint the compact value has to report.
+    expect(parsed?.records).toMatchObject([
+      { id: 'cursor:primary', isHeadline: false },
+      { id: 'cursor:cursor-models', isHeadline: true },
+    ]);
   });
 
   it('falls back to unavailable when Cursor changes the response schema', async () => {
