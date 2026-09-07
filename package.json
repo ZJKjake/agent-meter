@@ -2,40 +2,31 @@
   "name": "agentmeter",
   "displayName": "AgentMeter",
   "description": "Track AI coding tool usage, quotas, and remaining limits directly from your editor.",
-  "version": "0.1.2",
-
+  "version": "0.1.3",
   "publisher": "zjkjake",
   "author": "zjkjake",
   "license": "MIT",
-
   "icon": "media/icon.png",
-
   "repository": {
     "type": "git",
     "url": "https://github.com/ZJKjake/agent-meter"
   },
-
   "homepage": "https://github.com/ZJKjake/agent-meter#readme",
-
   "bugs": {
     "url": "https://github.com/ZJKjake/agent-meter/issues"
   },
-
   "galleryBanner": {
     "color": "#0F172A",
     "theme": "dark"
   },
-
   "engines": {
     "vscode": "^1.85.0"
   },
-
   "categories": [
     "Other",
     "Productivity",
     "Developer Tools"
   ],
-
   "keywords": [
     "ai",
     "ai coding",
@@ -52,16 +43,13 @@
     "developer tools",
     "coding assistant"
   ],
-
   "activationEvents": [
     "onStartupFinished",
     "onCommand:agentmeter.focus",
     "onCommand:agentmeter.refresh",
     "onView:agentmeter.dashboard"
   ],
-
   "main": "./dist/extension.js",
-
   "contributes": {
     "icons": {
       "agentmeter-logo": {
@@ -72,7 +60,6 @@
         }
       }
     },
-
     "colors": [
       {
         "id": "agentmeter.statusBarForeground",
@@ -85,7 +72,6 @@
         }
       }
     ],
-
     "viewsContainers": {
       "activitybar": [
         {
@@ -95,7 +81,6 @@
         }
       ]
     },
-
     "views": {
       "agentmeter": [
         {
@@ -106,7 +91,6 @@
         }
       ]
     },
-
     "commands": [
       {
         "command": "agentmeter.refresh",
@@ -134,7 +118,6 @@
         "title": "AgentMeter: Configure Providers"
       }
     ],
-
     "configuration": {
       "title": "AgentMeter",
       "properties": {
@@ -154,7 +137,6 @@
         }
       }
     },
-
     "menus": {
       "view/title": [
         {
@@ -165,7 +147,6 @@
       ]
     }
   },
-
   "scripts": {
     "build": "npm run check-types && node esbuild.js",
     "check-types": "tsc --noEmit",
@@ -176,7 +157,6 @@
     "package": "npm run verify:manifest && npm run build && node scripts/package.js package",
     "publish:open-vsx": "node scripts/publish-open-vsx.js"
   },
-
   "devDependencies": {
     "@types/node": "^22.20.1",
     "@types/vscode": "^1.85.0",
