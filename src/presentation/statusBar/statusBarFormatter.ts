@@ -183,33 +183,28 @@ function formatPercentage(percentage: number | null): string {
 }
 
 /**
- * Names the quota behind the compact percentage whenever a provider reports
- * more than one, since the value shows whichever is closest to running out
- * and so can change which quota it describes between refreshes. Naming it
- * keeps a number that moved for that reason from reading as usage that
- * suddenly jumped. A provider reporting one quota needs no hint.
+ * Names the window behind the compact percentage when a provider meters
+ * several of them, since the value shows whichever quota is closest to
+ * running out and a shorter window can overtake a longer one between
+ * refreshes. Naming it keeps a number that moved for that reason from
+ * reading as usage that suddenly jumped.
  *
- * The hint uses whichever label distinguishes the card's quotas: the pool for
- * providers that split a window across pools, the window for providers that
- * meter one pool over several windows.
+ * Pools are deliberately left unnamed. A provider that splits one window
+ * across pools always leads with the same window, so the value never changes
+ * period underneath the reader, and spelling out a pool would cost more width
+ * than the ambiguity is worth. The tooltip still lists every pool by name.
  */
 function formatHeadlineHint(
   card: UsageCardModel,
   quota: UsageQuotaModel,
 ): string {
-  if (card.quotas.length < 2) {
-    return '';
-  }
-
-  const hasDistinctScopes = card.quotas.some(
-    (candidate) => candidate.scopeLabel !== card.quotas[0]?.scopeLabel,
+  const metersSeveralWindows = card.quotas.some(
+    (candidate) => candidate.periodLabel !== card.quotas[0]?.periodLabel,
   );
-  const label =
-    hasDistinctScopes && quota.scopeLabel
-      ? quota.scopeLabel
-      : quota.periodLabel;
 
-  return ` (${label.replace(/ (?:pool|window)$/, '')})`;
+  return metersSeveralWindows
+    ? ` (${quota.periodLabel.replace(/ window$/, '')})`
+    : '';
 }
 
 /**

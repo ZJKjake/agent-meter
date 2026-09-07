@@ -18,13 +18,13 @@ All notable AgentMeter changes are documented here.
   order, so a window that just reset can no longer hide a quota that is nearly
   spent. Codex also no longer alternates between two correct values across
   refreshes.
-- Qualify the compact value with its window or pool whenever a provider
-  reports more than one, as in `Claude Code 26% (5-hour)`. The value shows
-  whichever quota is closest to running out, so it can change which one it
-  describes between refreshes; naming it keeps a number that moved for that
-  reason from reading as usage that suddenly jumped. Previously the name
-  appeared only when the leading quota was not the one shown, which missed
-  providers whose most depleted quota happens to be listed first.
+- Qualify the compact value with its window when a provider meters several,
+  as in `Claude Code 26% (5-hour)`. The value shows whichever quota is closest
+  to running out, so a shorter window can overtake a longer one between
+  refreshes; naming it keeps a number that moved for that reason from reading
+  as usage that suddenly jumped. Pools are left unnamed: a provider that
+  splits one window across pools always leads with the same window, so the
+  value never changes period underneath the reader.
 - Mark a Claude Code window stale once it has reset since the cached value was
   read, instead of marking the whole provider stale after a fixed interval.
   Claude only writes the cache while it renders a status line, so age alone

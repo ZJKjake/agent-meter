@@ -157,7 +157,7 @@ describe('status bar formatter', () => {
     expect(view.text).toBe('$(agentmeter-logo) AgentMeter · Codex 4% (1-week)');
   });
 
-  it('names the pool instead of the window when pools are what differ', () => {
+  it('leaves the number unqualified when only pools differ', () => {
     const view = formatStatusBar(
       dashboard([
         card('cursor', {
@@ -181,9 +181,10 @@ describe('status bar formatter', () => {
       ]),
     );
 
-    expect(view.text).toBe(
-      '$(agentmeter-logo) AgentMeter · Cursor 12% (Cursor Models)',
-    );
+    // Both pools share a window, so the value never changes period underneath
+    // the reader and a pool name would only cost width. The tooltip names it.
+    expect(view.text).toBe('$(agentmeter-logo) AgentMeter · Cursor 12%');
+    expect(view.tooltip).toContain('Cursor Models pool · 12% left');
   });
 
   it('names the quota even when the leading one is the headline', () => {
