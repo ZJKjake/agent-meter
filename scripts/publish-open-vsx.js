@@ -46,6 +46,10 @@ function main() {
   const packagePath = `./agentmeter-${packageJson.version}.vsix`;
 
   run(npmCommand, ['run', 'package'], packageEnvironment);
+  run(ovsxCommand, ['publish', `./agentmeter-local-${packageJson.version}.vsix`], {
+    ...packageEnvironment,
+    [TOKEN_VARIABLE]: publishingToken,
+  });
   run(ovsxCommand, ['publish', packagePath], {
     ...packageEnvironment,
     [TOKEN_VARIABLE]: publishingToken,

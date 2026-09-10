@@ -12,3 +12,14 @@ coverage/
 .env
 .env.*
 !.env.example
+
+packages/*/dist/
+packages/local/LICENSE
+
+# Local planning, validation output, reference material, and design drafts.
+/out/
+/PLAN-*.md
+/REMOTE-*.md
+/*.pdf
+/logoagentmeterv1.png
+/agentmeterlogov2.png

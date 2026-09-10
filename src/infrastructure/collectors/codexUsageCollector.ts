@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as readline from 'node:readline';
-import { delimiter, join } from 'node:path';
+import { posix, win32 } from 'node:path';
 import {
   ProviderSnapshot,
   UsageCollector,
@@ -41,7 +42,7 @@ export class CodexUsageCollector implements UsageCollector {
   public readonly tool = 'codex' as const;
 
   public constructor(
-    private readonly command = resolveCodexCommand(),
+    private readonly command?: string,
     private readonly timeoutMs = DEFAULT_TIMEOUT_MS,
     private readonly clientVersion = 'unknown',
   ) {}
@@ -50,8 +51,11 @@ export class CodexUsageCollector implements UsageCollector {
     let client: JsonRpcClient | undefined;
 
     try {
-      const process = spawn(this.command, ['app-server', '--stdio'], {
+      const launch = getCodexLaunch(this.command ?? resolveCodexCommand());
+      const process = spawn(launch.command, launch.args, {
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+        windowsVerbatimArguments: launch.windowsVerbatimArguments,
       });
       client = new JsonRpcClient(process, this.timeoutMs);
 
@@ -104,13 +108,17 @@ export function resolveCodexCommand(
   pathValue: string | undefined = process.env.PATH,
   platform: NodeJS.Platform = process.platform,
   fileExists: (path: string) => boolean = existsSync,
+  homeDirectory: string = homedir(),
 ): string {
   const executable = platform === 'win32' ? 'codex.exe' : 'codex';
-  const pathDelimiter = platform === 'win32' ? ';' : delimiter;
+  const pathJoin = platform === 'win32' ? win32.join : posix.join;
+  const pathDelimiter = platform === 'win32' ? ';' : ':';
   const pathCandidates = (pathValue ?? '')
     .split(pathDelimiter)
     .filter(Boolean)
-    .map((directory) => join(directory, executable));
+    .flatMap((directory) => platform === 'win32'
+      ? ['codex.exe', 'codex.cmd'].map((name) => pathJoin(directory, name))
+      : [pathJoin(directory, executable)]);
   const nativeCandidates =
     platform === 'darwin'
       ? ['/opt/homebrew/bin/codex', '/usr/local/bin/codex']
@@ -120,14 +128,40 @@ export function resolveCodexCommand(
             '/usr/local/bin/codex',
             '/usr/bin/codex',
           ]
-        : [];
+        : [pathJoin(homeDirectory, 'AppData', 'Roaming', 'npm', 'codex.cmd')];
 
-  return [...pathCandidates, ...nativeCandidates].find(fileExists) ?? executable;
+  const userCandidates = platform === 'win32' ? [] : [
+    pathJoin(homeDirectory, '.local', 'bin', executable),
+    pathJoin(homeDirectory, '.npm-global', 'bin', executable),
+    pathJoin(homeDirectory, '.volta', 'bin', executable),
+    pathJoin(homeDirectory, '.local', 'share', 'mise', 'shims', executable),
+  ];
+  return [...pathCandidates, ...userCandidates, ...nativeCandidates].find(fileExists) ?? executable;
+}
+
+export function getCodexLaunch(
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[]; windowsVerbatimArguments?: boolean } {
+  if (platform !== 'win32' || !/\.cmd$/i.test(command)) {
+    return { command, args: ['app-server', '--stdio'] };
+  }
+  // Percent expansion and quote/newline injection cannot be made safe by
+  // wrapping a cmd.exe command in quotes. Reject such unusual shim paths.
+  if (/["%\r\n]/.test(command)) {
+    throw new Error('Unsupported Codex command path.');
+  }
+  return {
+    command: 'cmd.exe',
+    args: ['/d', '/s', '/v:off', '/c', `""${command}" app-server --stdio"`],
+    windowsVerbatimArguments: true,
+  };
 }
 
 class JsonRpcClient {
   private readonly pending = new Map<number, PendingRequest>();
   private readonly reader: readline.Interface;
+  private terminalError: Error | undefined;
 
   public constructor(
     private readonly process: ChildProcessWithoutNullStreams,
@@ -136,10 +170,15 @@ class JsonRpcClient {
     this.reader = readline.createInterface({ input: process.stdout });
     this.reader.on('line', (line) => this.handleLine(line));
     process.stderr.resume();
-    process.once('error', (error) => this.rejectAll(error));
-    process.once('exit', (code) => {
-      if (code !== null && code !== 0) {
-        this.rejectAll(new Error(`Codex app-server exited with code ${code}.`));
+    process.once('error', (error) => this.fail(error));
+    process.stdin.on('error', (error) => this.fail(error));
+    process.stdout.on('error', (error) => this.fail(error));
+    process.once('exit', () => this.fail(new Error('Codex app-server exited.')));
+    let receivedBytes = 0;
+    process.stdout.on('data', (chunk: Buffer) => {
+      receivedBytes += chunk.length;
+      if (receivedBytes > 1024 * 1024) {
+        this.fail(new Error('Codex app-server response exceeded the size limit.'));
       }
     });
   }
@@ -149,6 +188,7 @@ class JsonRpcClient {
     method: string,
     params: JsonObject,
   ): Promise<JsonRpcResponse> {
+    if (this.terminalError) { return Promise.reject(this.terminalError); }
     return new Promise<JsonRpcResponse>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(id);
@@ -170,14 +210,26 @@ class JsonRpcClient {
   }
 
   public notify(method: string, params: JsonObject): void {
-    this.process.stdin.write(`${JSON.stringify({ method, params })}\n`);
+    if (this.terminalError) { throw this.terminalError; }
+    this.process.stdin.write(`${JSON.stringify({ method, params })}\n`, (error) => {
+      if (error) { this.fail(error); }
+    });
   }
 
   public dispose(): void {
     this.reader.close();
-    this.rejectAll(new Error('Codex app-server connection closed.'));
+    this.fail(new Error('Codex app-server connection closed.'));
     if (!this.process.killed) {
-      this.process.kill();
+      if (process.platform === 'win32' && this.process.pid) {
+        // An npm .cmd shim starts a child Node process. Killing only cmd.exe
+        // would leave that app-server running after every refresh.
+        const killer = spawn('taskkill', ['/pid', String(this.process.pid), '/T', '/F'], {
+          stdio: 'ignore', windowsHide: true,
+        });
+        killer.once('error', () => this.process.kill());
+      } else {
+        this.process.kill();
+      }
     }
   }
 
@@ -188,9 +240,11 @@ class JsonRpcClient {
 
     let response: JsonRpcResponse;
     try {
-      response = JSON.parse(line) as JsonRpcResponse;
+      const parsed: unknown = JSON.parse(line);
+      if (!asObject(parsed)) { throw new Error('Invalid JSON-RPC response.'); }
+      response = parsed as JsonRpcResponse;
     } catch {
-      this.rejectAll(new Error('Codex app-server returned invalid JSON.'));
+      this.fail(new Error('Codex app-server returned invalid JSON.'));
       return;
     }
 
@@ -212,6 +266,11 @@ class JsonRpcClient {
     }
 
     request.resolve(response);
+  }
+
+  private fail(error: Error): void {
+    this.terminalError ??= error;
+    this.rejectAll(error);
   }
 
   private rejectAll(error: Error): void {
@@ -375,7 +434,7 @@ function getWindowLabel(durationMinutes: number | null): string {
 }
 
 function asObject(value: unknown): JsonObject | null {
-  return typeof value === 'object' && value !== null
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as JsonObject)
     : null;
 }

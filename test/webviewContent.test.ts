@@ -431,3 +431,18 @@ describe('AgentMeter sidebar HTML', () => {
     expect(markup).toContain('5-hour window<span class="quota-stale"');
   });
 });
+
+it('renders one setup action for the active provider without a host selector', () => {
+  const dashboard: DashboardModel = {
+    generatedAt: '2026-09-09T12:00:00Z',
+    cards: [{
+      tool: 'claude-code', name: 'Claude Code', description: 'Anthropic coding agent',
+      location: 'workspace', locationLabel: 'SSH',
+      quotas: [], updatedAt: null, status: 'unknown', providerState: 'setup-required',
+      message: 'Connect this provider.', sourceLabel: 'Setup required',
+    }],
+  };
+  const { markup } = renderSidebar(dashboard);
+  expect(markup.match(/data-provider="claude-code"/g)).toHaveLength(1);
+  expect(markup).not.toContain('data-location=');
+});

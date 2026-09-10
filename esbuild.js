@@ -4,6 +4,16 @@ const watch = process.argv.includes('--watch');
 
 const configurations = [
   {
+    entryPoints: ['src/localExtension.ts'],
+    outfile: 'packages/local/dist/local-extension.js',
+    external: ['vscode'],
+  },
+  {
+    entryPoints: ['src/infrastructure/claude/claudeStatuslineBridge.ts'],
+    outfile: 'packages/local/dist/claude-statusline-bridge.js',
+    external: [],
+  },
+  {
     entryPoints: ['src/extension.ts'],
     outfile: 'dist/extension.js',
     external: ['vscode'],

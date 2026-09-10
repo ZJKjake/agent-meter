@@ -599,7 +599,7 @@ export function getWebviewContent(
     <div class="brand">
       <img class="brand-logo" src="${escapedLogoUri}" alt="">
       <div>
-        <div class="eyebrow">Local usage dashboard</div>
+        <div class="eyebrow">Usage dashboard</div>
         <h1>AgentMeter</h1>
       </div>
     </div>
@@ -618,7 +618,7 @@ export function getWebviewContent(
       </div>
       <button class="secondary-button" id="configure-providers" type="button">Set up providers</button>
     </div>
-    <div class="overview-meta" id="overview-meta">Reading usage from local provider integrations.</div>
+    <div class="overview-meta" id="overview-meta">Reading usage from your connected providers.</div>
   </section>
 
   <main>
@@ -1034,7 +1034,7 @@ export function getWebviewContent(
 
       if (!cards.length && !dashboard.generatedAt) {
         overviewValueElement.textContent = 'Checking providers…';
-        overviewMetaElement.textContent = 'Reading usage from local provider integrations.';
+        overviewMetaElement.textContent = 'Reading usage from your connected providers.';
         cardsElement.innerHTML = renderSkeletons();
         setRefreshing(true);
         return;
@@ -1104,6 +1104,9 @@ export function getWebviewContent(
     });
 
     render(dashboard);
+    // Collection can finish before this document's message listener exists.
+    // Ask the host to replay its latest snapshot after the page is ready.
+    vscode.postMessage({ command: 'ready' });
   </script>
 </body>
 </html>`;

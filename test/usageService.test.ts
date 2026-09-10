@@ -69,7 +69,7 @@ describe('UsageService', () => {
         },
       ],
       status: 'healthy',
-      sourceLabel: 'Local collector',
+      sourceLabel: 'This computer',
     });
     expect(dashboard.cards[2]).toMatchObject({
       tool: 'codex',

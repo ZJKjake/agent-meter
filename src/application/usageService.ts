@@ -32,6 +32,8 @@ export class UsageService {
       if (snapshotsByTool.has(snapshot.tool)) {
         snapshotsByTool.set(snapshot.tool, {
           tool: snapshot.tool,
+          location: snapshot.location,
+          locationLabel: snapshot.locationLabel,
           state: 'unavailable',
           records: [],
           message: 'Multiple collectors returned data for this provider.',
@@ -42,17 +44,13 @@ export class UsageService {
       snapshotsByTool.set(snapshot.tool, snapshot);
     }
 
-    const cards = TOOL_DEFINITIONS.map((definition) =>
-      this.toCardModel(
-        definition,
-        snapshotsByTool.get(definition.id) ?? {
-          tool: definition.id,
-          state: 'unavailable',
-          records: [],
-          message: 'No collector is configured for this provider yet.',
-        },
-      ),
-    );
+    const cards = TOOL_DEFINITIONS.map((definition) => {
+      const snapshot = snapshotsByTool.get(definition.id) ?? {
+        tool: definition.id, state: 'unavailable' as const, records: [],
+        message: 'No collector is configured for this provider yet.',
+      };
+      return this.toCardModel(definition, snapshot);
+    });
 
     return {
       cards: await this.sortCards(cards),
@@ -77,7 +75,7 @@ export class UsageService {
 
     return [...cards].sort((left, right) => {
       if (left.tool === PINNED_TOOL || right.tool === PINNED_TOOL) {
-        return left.tool === PINNED_TOOL ? -1 : 1;
+        return left.tool === right.tool ? 0 : left.tool === PINNED_TOOL ? -1 : 1;
       }
 
       const leftAt = firstReportedAt[left.tool];
@@ -133,6 +131,8 @@ export class UsageService {
     return {
       tool: definition.id,
       name: definition.name,
+      location: snapshot.location,
+      locationLabel: snapshot.locationLabel,
       description: definition.description,
       quotas,
       updatedAt: this.getLatestUpdatedAt(snapshot.records),
@@ -151,7 +151,7 @@ export class UsageService {
                   (record) => record.source === 'experimental-local',
                 )
               ? 'Cursor API'
-              : 'Local collector'
+              : snapshot.location === 'workspace' ? `${snapshot.locationLabel ?? 'Remote'} account` : 'This computer'
           : this.getProviderStateLabel(providerState),
     };
   }

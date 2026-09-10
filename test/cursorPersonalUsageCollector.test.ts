@@ -160,6 +160,18 @@ describe('CursorPersonalUsageCollector', () => {
       getCursorStateDatabasePath('win32', 'C:\\Users\\test', {
         APPDATA: 'C:\\Roaming',
       }),
-    ).toBe('C:\\Roaming/Cursor/User/globalStorage/state.vscdb');
+    ).toBe('C:\\Roaming\\Cursor\\User\\globalStorage\\state.vscdb');
+  });
+});
+
+describe('Cursor application storage location', () => {
+  it('uses the current user data directory instead of a different installation', async () => {
+    const { getCursorStateDatabasePathFromStorage } = await import('../src/infrastructure/collectors/cursorPersonalUsageCollector');
+    expect(getCursorStateDatabasePathFromStorage('/custom/cursor/User/globalStorage/zjkjake.agentmeter-local', 'linux'))
+      .toBe('/custom/cursor/User/globalStorage/state.vscdb');
+    expect(getCursorStateDatabasePathFromStorage('/custom/cursor/User/profiles/profile1/globalStorage/zjkjake.agentmeter-local', 'darwin'))
+      .toBe('/custom/cursor/User/globalStorage/state.vscdb');
+    expect(getCursorStateDatabasePathFromStorage('C:/CursorData/User/profiles/profile1/globalStorage/zjkjake.agentmeter-local', 'win32'))
+      .toBe('C:\\CursorData\\User\\globalStorage\\state.vscdb');
   });
 });

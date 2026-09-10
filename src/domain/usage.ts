@@ -83,7 +83,11 @@ export interface UsageRecord {
   readonly source: 'experimental-local' | 'local' | 'mock';
 }
 
+export type UsageLocation = 'local' | 'workspace';
+
 export interface ProviderSnapshot {
+  readonly location?: UsageLocation;
+  readonly locationLabel?: string;
   readonly tool: AiToolId;
   readonly state: ProviderState;
   readonly records: readonly UsageRecord[];
@@ -131,6 +135,8 @@ export interface UsageQuotaModel {
 }
 
 export interface UsageCardModel {
+  readonly location?: UsageLocation;
+  readonly locationLabel?: string;
   readonly tool: AiToolId;
   readonly name: string;
   readonly description: string;

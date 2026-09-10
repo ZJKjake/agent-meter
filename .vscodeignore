@@ -11,3 +11,8 @@ scripts/
 logoagentmeterv1.png
 agentmeterlogov2.png
 PLAN-*.md
+
+packages/
+out/
+*.pdf
+REMOTE-*.md

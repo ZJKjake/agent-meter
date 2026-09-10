@@ -2,7 +2,28 @@
 
 All notable AgentMeter changes are documented here.
 
-## 0.1.3 — 2026-09-07
+## 0.1.3
+
+### Source updates (not yet published)
+
+- Resolve Cursor authentication from the current application data directory,
+  including named editor profiles and custom user-data directories.
+
+- Collect Cursor usage from the desktop even in SSH workspaces through a
+  required desktop companion.
+- Show one card per provider. Claude Code and Codex follow the active workspace's
+  account, and setup automatically targets the same machine.
+- Validate usage sent between extension hosts and restore timestamps after
+  transport. Keep credentials on their originating machines.
+- Recover desktop collection on later refreshes without hiding workspace data.
+- Discover common per-user Codex installs with limited SSH/GUI PATHs and repeat
+  discovery on refresh so newly installed CLIs can be found.
+- Isolate malformed provider responses and bound both desktop and workspace
+  collection timeouts. Handle malformed or terminated Codex app-server processes.
+- Replay the latest usage after the sidebar finishes loading so early updates
+  cannot leave the dashboard empty.
+
+### Published 2026-09-07
 
 - Report two quota bars per provider. Codex and Claude Code show a 5-hour and
   a weekly window; Cursor shows its Cursor Models and Other Models pools.

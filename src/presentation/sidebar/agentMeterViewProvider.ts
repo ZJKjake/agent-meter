@@ -39,7 +39,7 @@ export class AgentMeterViewProvider implements vscode.WebviewViewProvider {
     );
     webviewView.webview.html = getWebviewContent(
       webviewView.webview,
-      EMPTY_DASHBOARD,
+      this.dashboardStore.getSnapshot() ?? EMPTY_DASHBOARD,
       logoUri.toString(),
     );
     this.storeSubscription?.dispose();
@@ -48,8 +48,15 @@ export class AgentMeterViewProvider implements vscode.WebviewViewProvider {
     );
 
     webviewView.webview.onDidReceiveMessage((message: WebviewMessage) => {
+      if (message.command === 'ready') {
+        const dashboard = this.dashboardStore.getSnapshot();
+        if (dashboard) {
+          void webviewView.webview.postMessage({ type: 'dashboardUpdated', dashboard });
+        }
+      }
+
       if (message.command === 'refresh') {
-        void this.refresh();
+        void this.refresh().catch(() => undefined);
       }
 
       if (message.command === 'configureProviders') {

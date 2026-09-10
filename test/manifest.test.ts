@@ -32,3 +32,14 @@ describe('release manifest guard', () => {
     expect(errors[0]).toContain('zjkjake.agentmeter');
   });
 });
+
+it('declares the UI companion dependency and the execution location of each package', () => {
+  const main = require('../package.json');
+  const local = require('../packages/local/package.json');
+  expect(main.extensionKind).toEqual(['workspace']);
+  expect(main.extensionDependencies).toEqual([`${local.publisher}.${local.name}`]);
+  expect(local.extensionKind).toEqual(['ui']);
+  expect(local.api).toBe('none');
+  expect(local.version).toBe(main.version);
+  expect(local.activationEvents).toContain('onCommand:agentmeter.local.collect.v1');
+});

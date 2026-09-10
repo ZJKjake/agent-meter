@@ -154,7 +154,7 @@
     "verify:manifest": "node scripts/verify-manifest.js",
     "watch": "npm run check-types -- --watch",
     "watch:esbuild": "node esbuild.js --watch",
-    "package": "npm run verify:manifest && npm run build && node scripts/package.js package",
+    "package": "npm run verify:manifest && npm run build && node scripts/package-all.js",
     "publish:open-vsx": "node scripts/publish-open-vsx.js"
   },
   "devDependencies": {
@@ -165,5 +165,11 @@
     "ovsx": "1.1.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
-  }
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "extensionDependencies": [
+    "zjkjake.agentmeter-local"
+  ]
 }

@@ -68,7 +68,8 @@ function formatTooltip(dashboard: DashboardModel): string {
       lines.push('');
     }
 
-    lines.push(`**${card.name}**`, ...formatCardDetail(card));
+    const location = card.locationLabel ? ` (${card.locationLabel})` : '';
+    lines.push(`**${card.name}${location}**`, ...formatCardDetail(card));
   }
 
   lines.push('', 'Click to open the AgentMeter dashboard.');

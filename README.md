@@ -1,6 +1,6 @@
 # AgentMeter
 
-AgentMeter is a local-first VS Code/Cursor extension that shows how much AI
+AgentMeter is a VS Code/Cursor extension that shows how much AI
 coding quota you have **remaining**. It never combines unrelated provider
 limits into one misleading score.
 
@@ -31,6 +31,31 @@ A fresh installation never displays sample usage. Providers explicitly show
 `Connected`, `Setup required`, `Sign-in required`, `Unsupported`,
 `Unavailable`, `Stale data`, or `Mock/development data`. Missing or broken
 integrations display `—` rather than zero or a guessed value.
+
+## Local and remote workspaces
+
+In desktop remote windows, the main extension runs beside your workspace;
+its required **AgentMeter Local** companion runs on your computer. The editor
+installs the companion as a dependency. No SSH settings overrides, copied tokens,
+extra ports, or user-managed forwarding are needed.
+
+- **Cursor** always uses the desktop Cursor session, including in remote windows.
+- **Claude Code and Codex** use the account on the active workspace machine:
+  your computer in a local window, or the SSH/remote machine in a remote window.
+- There is always one card per tool. Quotas match when both machines use the
+  same account; separate accounts are never combined or substituted for each other.
+- A remote provider that needs sign-in or setup shows that state, rather than
+  displaying a different local account's usage.
+- Setup buttons and Command Palette commands automatically configure the active
+  workspace's provider. Cursor setup always stays on the desktop.
+
+Provider setup still applies: Cursor's private adapter needs opt-in; Claude Code
+needs its official status-line bridge; Codex needs a signed-in CLI. AgentMeter
+cannot report quotas a provider does not expose. Browser-only editors without a
+local Node extension host cannot use the desktop companion.
+
+The SSH flow has been exercised with macOS and Linux hosts. Windows, WSL,
+Dev Containers, and Codespaces still need end-to-end validation.
 
 ## Remaining-percentage semantics
 
@@ -120,14 +145,15 @@ is visibly marked stale.
 ### Codex
 
 Install the Codex CLI and run `codex login`, then refresh AgentMeter. AgentMeter
-starts `codex app-server --stdio` locally, reads the documented rate-limit
+starts `codex app-server --stdio` on each applicable machine, reads the documented rate-limit
 response, and closes the process. It never reads or stores Codex credentials.
 
 ## Privacy and security
 
 AgentMeter has no telemetry, analytics, account backend, or third-party data
-service. Provider usage stays in the extension process except for the Claude
-sanitized cache described above.
+service. In remote windows, normalized usage values and provider status travel through
+the editor connection. Credentials stay on the machine that owns them. Claude
+also writes the sanitized cache described above.
 
 - No publishing, provider, or session token is included in logs.
 - No mock collector is wired into production.
@@ -172,8 +198,14 @@ src/
 Install a local build in Cursor:
 
 ```bash
-cursor --install-extension ./agentmeter-0.1.2.vsix
+cursor --install-extension ./agentmeter-local-0.1.3.vsix
+cursor --install-extension ./agentmeter-0.1.3.vsix
 ```
+
+`npm run package` produces both VSIX files. For unpublished builds install the
+companion first; marketplace users install AgentMeter normally and receive its
+dependency automatically. Publish the companion before the main extension.
+`npm run publish:open-vsx` packages both and publishes them in that order.
 
 Publish to Open VSX from a trusted terminal or CI secret store:
 

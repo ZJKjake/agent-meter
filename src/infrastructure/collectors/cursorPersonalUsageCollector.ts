@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { request as httpsRequest } from 'node:https';
 import { homedir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, join, posix, win32 } from 'node:path';
 import {
   ProviderSnapshot,
   UsageCollector,
@@ -30,6 +30,7 @@ type CursorUsageRequest = (token: string) => Promise<unknown>;
 
 export interface CursorPersonalUsageCollectorOptions {
   readonly clientVersion?: string;
+  readonly databasePath?: string;
   readonly isEnabled: () => boolean;
   readonly isCursorInstalled?: () => boolean;
   readonly readToken?: () => Promise<CursorTokenReadResult>;
@@ -69,7 +70,7 @@ export class CursorPersonalUsageCollector implements UsageCollector {
   public constructor(
     private readonly options: CursorPersonalUsageCollectorOptions,
   ) {
-    this.readToken = options.readToken ?? readCursorAccessToken;
+    this.readToken = options.readToken ?? (() => readCursorAccessToken(options.databasePath));
     this.requestUsage =
       options.requestUsage ??
       ((token) =>
@@ -81,7 +82,7 @@ export class CursorPersonalUsageCollector implements UsageCollector {
     this.now = options.now ?? (() => new Date());
     this.isCursorInstalled =
       options.isCursorInstalled ??
-      (() => existsSync(getCursorStateDatabasePath()));
+      (() => existsSync(options.databasePath ?? getCursorStateDatabasePath()));
   }
 
   public async collect(): Promise<ProviderSnapshot> {
@@ -182,14 +183,15 @@ export function getCursorStateDatabasePath(
   homeDirectory: string = homedir(),
   environment: NodeJS.ProcessEnv = process.env,
 ): string {
+  const pathJoin = platform === 'win32' ? win32.join : posix.join;
   if (platform === 'win32') {
     const appData = environment.APPDATA ??
-      join(homeDirectory, 'AppData', 'Roaming');
-    return join(appData, 'Cursor', 'User', 'globalStorage', 'state.vscdb');
+      pathJoin(homeDirectory, 'AppData', 'Roaming');
+    return pathJoin(appData, 'Cursor', 'User', 'globalStorage', 'state.vscdb');
   }
 
   if (platform === 'darwin') {
-    return join(
+    return pathJoin(
       homeDirectory,
       'Library',
       'Application Support',
@@ -201,8 +203,8 @@ export function getCursorStateDatabasePath(
   }
 
   const configDirectory = environment.XDG_CONFIG_HOME ??
-    join(homeDirectory, '.config');
-  return join(
+    pathJoin(homeDirectory, '.config');
+  return pathJoin(
     configDirectory,
     'Cursor',
     'User',
@@ -524,4 +526,18 @@ function asObject(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null
     ? (value as Record<string, unknown>)
     : null;
+}
+
+/** Cursor stores authentication at application scope, shared across editor profiles. */
+export function getCursorStateDatabasePathFromStorage(
+  extensionStoragePath: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const paths = platform === 'win32' ? win32 : posix;
+  const storageDirectory = paths.dirname(extensionStoragePath);
+  const profilesDirectory = paths.dirname(paths.dirname(storageDirectory));
+  const applicationStorage = paths.basename(profilesDirectory) === 'profiles'
+    ? paths.join(paths.dirname(profilesDirectory), 'globalStorage')
+    : storageDirectory;
+  return paths.join(applicationStorage, 'state.vscdb');
 }

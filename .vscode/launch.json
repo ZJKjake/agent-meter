@@ -6,7 +6,10 @@
       "type": "extensionHost",
       "request": "launch",
       "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}"
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--extensionDevelopmentKind=workspace",
+        "--extensionDevelopmentPath=${workspaceFolder}/packages/local",
+        "--extensionDevelopmentKind=ui"
       ],
       "outFiles": [
         "${workspaceFolder}/dist/**/*.js"

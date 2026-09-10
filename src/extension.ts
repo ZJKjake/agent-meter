@@ -8,32 +8,25 @@ import {
 } from './domain/usage';
 import { ClaudeUsageCollector } from './infrastructure/collectors/claudeUsageCollector';
 import { CodexUsageCollector } from './infrastructure/collectors/codexUsageCollector';
-import { CursorPersonalUsageCollector } from './infrastructure/collectors/cursorPersonalUsageCollector';
-import {
-  buildClaudeStatusLineCommand,
-  getClaudeSettingsPath,
-  installClaudeStatusLineBridge,
-  mergeClaudeStatusLineSettings,
-  readClaudeSettings,
-  writeClaudeSettings,
-} from './infrastructure/claude/claudeSettings';
+import { configureClaudeCode, configureCodex } from './presentation/configuration/providerConfiguration';
+import { HostUsageRepository } from './infrastructure/hosts/hostUsageRepository';
+import { LOCAL_COLLECT_COMMAND, LOCAL_CONFIGURE_COMMAND } from './infrastructure/hosts/usageProtocol';
 import { CollectorUsageRepository } from './infrastructure/usage/collectorUsageRepository';
 import { AgentMeterViewProvider } from './presentation/sidebar/agentMeterViewProvider';
 import { StatusBarManager } from './presentation/statusBar/statusBarManager';
 
 export function activate(context: vscode.ExtensionContext): void {
   const extensionVersion = getExtensionVersion(context);
-  const usageRepository = new CollectorUsageRepository([
-    new CursorPersonalUsageCollector({
-      clientVersion: extensionVersion,
-      isEnabled: () =>
-        vscode.workspace
-          .getConfiguration('agentmeter')
-          .get<boolean>('cursor.experimentalPersonalUsage.enabled', false),
-    }),
+  const isRemote = Boolean(vscode.env.remoteName);
+  const workspaceRepository = new CollectorUsageRepository([
     new ClaudeUsageCollector(),
     new CodexUsageCollector(undefined, undefined, extensionVersion),
   ]);
+  const usageRepository = new HostUsageRepository(
+    () => vscode.commands.executeCommand(LOCAL_COLLECT_COMMAND),
+    isRemote ? workspaceRepository : undefined,
+    getWorkspaceLabel(vscode.env.remoteName),
+  );
   const usageService = new UsageService(
     usageRepository,
     createProviderOrderStore(context),
@@ -68,13 +61,13 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.executeCommand('workbench.view.extension.agentmeter'),
     ),
     vscode.commands.registerCommand('agentmeter.configureClaudeCode', () =>
-      configureClaudeCode(context, dashboardStore),
+      configureProvider('claude-code', context, dashboardStore),
     ),
     vscode.commands.registerCommand('agentmeter.configureCursor', () =>
-      configureCursor(dashboardStore),
+      configureProvider('cursor', context, dashboardStore),
     ),
     vscode.commands.registerCommand('agentmeter.configureCodex', () =>
-      configureCodex(),
+      configureProvider('codex', context, dashboardStore),
     ),
     vscode.commands.registerCommand('agentmeter.configureProviders', () =>
       configureProviders(),
@@ -134,104 +127,6 @@ function getRefreshIntervalMs(): number {
   return minutes * 60_000;
 }
 
-async function configureClaudeCode(
-  context: vscode.ExtensionContext,
-  dashboardStore: DashboardStore,
-): Promise<void> {
-  const settingsPath = getClaudeSettingsPath();
-
-  try {
-    const current = await readClaudeSettings(settingsPath);
-    let backupExisting = false;
-
-    if (current.hasStatusLine) {
-      const choice = await vscode.window.showWarningMessage(
-        'Claude Code already has a status line configured. Replace it with AgentMeter?',
-        'Replace status line',
-        'Cancel',
-      );
-
-      if (choice !== 'Replace status line') {
-        return;
-      }
-
-      backupExisting = true;
-    }
-
-    const bridgePath = await installClaudeStatusLineBridge(
-      context.extensionPath,
-    );
-    const command = buildClaudeStatusLineCommand(bridgePath);
-    const settings = mergeClaudeStatusLineSettings(current.settings, command);
-    const result = await writeClaudeSettings(
-      settingsPath,
-      settings,
-      backupExisting,
-    );
-
-    const backupMessage = result.backupPath
-      ? ` A backup was saved to ${result.backupPath}.`
-      : '';
-    void vscode.window.showInformationMessage(
-      `Claude Code status line configured for AgentMeter.${backupMessage} Restart Claude Code to apply it.`,
-    );
-    await dashboardStore.refresh();
-  } catch {
-    console.error('AgentMeter failed to configure Claude Code.');
-    void vscode.window.showErrorMessage(
-      'AgentMeter could not configure Claude Code. Check that ~/.claude/settings.json contains valid JSON.',
-    );
-  }
-}
-
-async function configureCursor(
-  dashboardStore: DashboardStore,
-): Promise<void> {
-  const configuration = vscode.workspace.getConfiguration('agentmeter');
-  const key = 'cursor.experimentalPersonalUsage.enabled';
-  const isEnabled = configuration.get<boolean>(key, false);
-
-  if (isEnabled) {
-    const choice = await vscode.window.showWarningMessage(
-      'The experimental/private Cursor adapter is enabled. It reads Cursor\'s local access token read-only and sends it only to api2.cursor.sh over HTTPS. Disable it?',
-      { modal: true },
-      'Keep enabled',
-      'Disable adapter',
-    );
-
-    if (choice !== 'Disable adapter') {
-      return;
-    }
-
-    await configuration.update(key, false, vscode.ConfigurationTarget.Global);
-    await dashboardStore.refresh();
-    return;
-  }
-
-  const choice = await vscode.window.showWarningMessage(
-    'Enable AgentMeter\'s experimental/private Cursor personal-plan adapter? It reads Cursor\'s local access token read-only on each refresh and sends it only to api2.cursor.sh over HTTPS. AgentMeter never stores, logs, or sends the token elsewhere. Cursor does not publish this API, so it can stop working without notice.',
-    { modal: true },
-    'Enable adapter',
-    'Cancel',
-  );
-
-  if (choice !== 'Enable adapter') {
-    return;
-  }
-
-  await configuration.update(key, true, vscode.ConfigurationTarget.Global);
-  await dashboardStore.refresh();
-  void vscode.window.showInformationMessage(
-    'Experimental Cursor usage enabled. AgentMeter will show — if the private integration becomes unavailable.',
-  );
-}
-
-async function configureCodex(): Promise<void> {
-  void vscode.window.showInformationMessage(
-    'AgentMeter uses the local Codex app-server. Install the Codex CLI and run "codex login", then refresh AgentMeter. No Codex credentials are read or stored by AgentMeter.',
-  );
-}
-
 async function configureProviders(): Promise<void> {
   const selection = await vscode.window.showQuickPick(
     [
@@ -247,7 +142,7 @@ async function configureProviders(): Promise<void> {
       },
       {
         label: 'Codex',
-        description: 'View local CLI setup instructions',
+        description: 'Connect your Codex CLI',
         command: 'agentmeter.configureCodex',
       },
     ],
@@ -275,4 +170,34 @@ async function initializeDashboard(
 
   await context.globalState.update(onboardingKey, true);
   await vscode.commands.executeCommand('workbench.view.extension.agentmeter');
+}
+
+function getWorkspaceLabel(remoteName: string | undefined): string {
+  switch (remoteName) {
+    case 'ssh-remote': return 'SSH';
+    case 'dev-container': case 'attached-container': return 'Container';
+    case 'wsl': return 'WSL';
+    case 'codespaces': return 'Codespaces';
+    default: return 'Remote';
+  }
+}
+
+async function configureProvider(
+  tool: 'cursor' | 'claude-code' | 'codex',
+  context: vscode.ExtensionContext,
+  dashboardStore: DashboardStore,
+): Promise<void> {
+  const location = tool === 'cursor' || !vscode.env.remoteName ? 'local' : 'workspace';
+  try {
+    if (location === 'local') {
+      await vscode.commands.executeCommand(LOCAL_CONFIGURE_COMMAND, tool);
+    } else if (tool === 'claude-code') {
+      await configureClaudeCode(context);
+    } else {
+      await configureCodex('the remote workspace');
+    }
+    await dashboardStore.refresh();
+  } catch {
+    void vscode.window.showErrorMessage('AgentMeter could not reach this computer. Reload the window to reconnect.');
+  }
 }
