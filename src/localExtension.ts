@@ -21,11 +21,16 @@ export function activate(context: vscode.ExtensionContext): void {
     new ClaudeUsageCollector(),
     new CodexUsageCollector(undefined, undefined, version),
   ]);
-  let pending: Promise<ReturnType<typeof encodeUsage>> | undefined;
+  const pending = new Map<boolean, Promise<ReturnType<typeof encodeUsage>>>();
   context.subscriptions.push(
-    vscode.commands.registerCommand(LOCAL_COLLECT_COMMAND, () => {
-      pending ??= repository.getUsage().then(encodeUsage).finally(() => { pending = undefined; });
-      return pending;
+    vscode.commands.registerCommand(LOCAL_COLLECT_COMMAND, (request?: unknown) => {
+      // Optional request: older workspace versions still receive all tools.
+      const cursorOnly = request === 'cursor-only';
+      if (!pending.has(cursorOnly)) {
+        pending.set(cursorOnly, repository.getUsage(cursorOnly ? ['cursor'] : undefined)
+          .then(encodeUsage).finally(() => { pending.delete(cursorOnly); }));
+      }
+      return pending.get(cursorOnly);
     }),
     vscode.commands.registerCommand(LOCAL_CONFIGURE_COMMAND, async (tool: unknown) => {
       switch (tool) {

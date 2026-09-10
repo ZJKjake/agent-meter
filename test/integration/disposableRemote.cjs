@@ -13,7 +13,7 @@ exports.activate = async function () {
   const cache = path.join(home, '.agentmeter/claude-code-usage.json');
   const bridge = path.join(home, '.agentmeter/claude-statusline-bridge.js');
   assert(!fs.existsSync(cli) && !fs.existsSync(settingsPath) && !fs.existsSync(cache));
-  const common = {requirePackagedPath:true,requireAvailable:[],dataProvenance:{'local:cursor':'signed-out isolated Cursor profile','workspace:codex':'synthetic CLI fixture','workspace:claude-code':'synthetic official-format status-line payload'}};
+  const common = {requirePackagedPath:true,requireAvailable:[],dataProvenance:{'local:cursor':'desktop account; sign-in state recorded in report','workspace:codex':'synthetic CLI fixture','workspace:claude-code':'synthetic official-format status-line payload'}};
   const check = (name, options) => run({...common,...options,reportPath:`/home/dev/single-${name}.json`});
   const output = [];
   try {
@@ -41,9 +41,18 @@ exports.activate = async function () {
     assert.equal(codexCard.quotas[0].used, 23, 'Display the remote fixture account, not the live local account');
     fs.writeFileSync(cli,"#!/usr/local/bin/node\nprocess.stdout.write('null\\n');setInterval(()=>{},1000);\n");
     fs.writeFileSync(cache,'invalid JSON');
-    output.push(await check('linux-fixture-failed',{requireStates:{'workspace:codex':'unavailable','workspace:claude-code':'unavailable'}}));
+    output.push(await check('linux-fixture-failed',{requireStates:{'workspace:codex':'stale','workspace:claude-code':'stale'}}));
+    const disconnected = await vscode.commands.executeCommand('agentmeter.refresh');
+    for (const tool of ['codex', 'claude-code']) {
+      const before = selected.cards.find(card => card.tool === tool);
+      const after = disconnected.cards.find(card => card.tool === tool);
+      assert.equal(after.isPreviousReading, true);
+      assert.equal(after.updatedAt, before.updatedAt);
+      assert.deepEqual(after.quotas, before.quotas);
+    }
     fs.writeFileSync(cli,healthy);feed();
     output.push(await check('linux-fixture-recovered',{requireAvailable:['workspace:codex','workspace:claude-code']}));
+    assert(output.at(-1).cards.every(card => !card.isPreviousReading));
     fs.writeFileSync('/home/dev/single-scenario-result.json',JSON.stringify({passed:true,scenarios:output.length,claudeConfigurationHost:'linux',claudeData:'fixture, not a live subscription'},null,2));
   } catch (e) {
     fs.writeFileSync('/home/dev/single-scenario-error.txt',String(e.stack || e));

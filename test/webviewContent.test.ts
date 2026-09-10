@@ -29,6 +29,9 @@ function quota(overrides: Partial<UsageQuotaModel>): UsageQuotaModel {
 
 interface RenderedSidebar {
   readonly markup: string;
+  readonly overview: string;
+  readonly meta: string;
+  update(dashboard: DashboardModel): void;
   /** Widths the script applied to each bar, in the order it found them. */
   readonly barWidths: readonly string[];
 }
@@ -50,6 +53,7 @@ function renderSidebar(dashboard: DashboardModel): RenderedSidebar {
   }
 
   const bars: { style: { width: string } }[] = [];
+  let onMessage: ((event: { data: unknown }) => void) | undefined;
   const createElement = () => ({
     textContent: '',
     innerHTML: '',
@@ -86,11 +90,14 @@ function renderSidebar(dashboard: DashboardModel): RenderedSidebar {
   )(
     () => ({ postMessage: () => undefined }),
     { getElementById: (id: string) => elements.get(id) ?? null },
-    { addEventListener: () => undefined },
+    { addEventListener: (_name: string, listener: typeof onMessage) => { onMessage = listener; } },
   );
 
   return {
-    markup: elements.get('cards')?.innerHTML ?? '',
+    get markup() { return elements.get('cards')?.innerHTML ?? ''; },
+    get overview() { return elements.get('overview-value')?.textContent ?? ''; },
+    get meta() { return elements.get('overview-meta')?.textContent ?? ''; },
+    update: (next) => onMessage?.({ data: { type: 'dashboardUpdated', dashboard: next } }),
     barWidths: bars.map((bar) => bar.style.width),
   };
 }
@@ -100,6 +107,37 @@ function renderCards(dashboard: DashboardModel): string {
 }
 
 describe('AgentMeter sidebar HTML', () => {
+  it('puts provider status after all usage cards', () => {
+    const html = getWebviewContent(WEBVIEW, { cards: [], generatedAt: '' }, 'logo.png');
+    expect(html.indexOf('id="cards"')).toBeLessThan(html.indexOf('id="overview-label"'));
+    expect(html.indexOf('</main>')).toBeLessThan(html.indexOf('<section class="overview"'));
+  });
+
+  it('keeps historical quota visible without counting it as connected and recovers in the same page', () => {
+    const connected: DashboardModel = {
+      generatedAt: '2026-09-10T00:00:00.000Z',
+      cards: [{
+        tool: 'codex', name: 'Codex', description: 'Test', quotas: [quota({})],
+        updatedAt: '2026-09-10T00:00:00.000Z', status: 'healthy',
+        providerState: 'available', sourceLabel: 'SSH account', message: null,
+      }],
+    };
+    const sidebar = renderSidebar(connected);
+    expect(sidebar.overview).toBe('All providers reporting');
+    sidebar.update({ ...connected, cards: [{ ...connected.cards[0],
+      isPreviousReading: true, providerState: 'stale',
+      message: 'Last known usage. Reconnecting.',
+    }] });
+    expect(sidebar.markup).toContain('93');
+    expect(sidebar.markup).toContain('Last known');
+    expect(sidebar.markup).not.toContain('provider-action');
+    expect(sidebar.overview).toBe('0 of 1 providers reporting');
+    expect(sidebar.meta).toContain('Retrying automatically');
+    sidebar.update(connected);
+    expect(sidebar.overview).toBe('All providers reporting');
+    expect(sidebar.markup).not.toContain('Last known');
+    expect(sidebar.meta).not.toContain('Retrying');
+  });
   it('serializes remaining usage safely and includes onboarding actions', () => {
     const dashboard: DashboardModel = {
       generatedAt: '2026-08-21T16:00:00.000Z',

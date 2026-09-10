@@ -23,7 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
     new CodexUsageCollector(undefined, undefined, extensionVersion),
   ]);
   const usageRepository = new HostUsageRepository(
-    () => vscode.commands.executeCommand(LOCAL_COLLECT_COMMAND),
+    () => vscode.commands.executeCommand(LOCAL_COLLECT_COMMAND, isRemote ? 'cursor-only' : undefined),
     isRemote ? workspaceRepository : undefined,
     getWorkspaceLabel(vscode.env.remoteName),
   );
@@ -43,6 +43,10 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
+    dashboardStore.subscribe((event) => {
+      refreshScheduler.setRetrying(event.type === 'error' || Boolean(event.dashboard.refreshError) ||
+        event.dashboard.cards.some((card) => card.providerState === 'unavailable' || card.isPreviousReading));
+    }),
     statusBarManager,
     refreshScheduler,
     vscode.window.registerWebviewViewProvider(
@@ -188,6 +192,7 @@ async function configureProvider(
   dashboardStore: DashboardStore,
 ): Promise<void> {
   const location = tool === 'cursor' || !vscode.env.remoteName ? 'local' : 'workspace';
+  dashboardStore.clearPreviousUsage(tool);
   try {
     if (location === 'local') {
       await vscode.commands.executeCommand(LOCAL_CONFIGURE_COMMAND, tool);

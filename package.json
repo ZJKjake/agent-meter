@@ -1,8 +1,8 @@
 {
   "name": "agentmeter",
   "displayName": "AgentMeter",
-  "description": "Track AI coding tool usage, quotas, and remaining limits directly from your editor.",
-  "version": "0.1.3",
+  "description": "Track Cursor, Claude Code, and Codex usage and remaining quotas in local and SSH workspaces.",
+  "version": "0.1.4",
   "publisher": "zjkjake",
   "author": "zjkjake",
   "license": "MIT",

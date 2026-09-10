@@ -1,8 +1,8 @@
 # AgentMeter
 
-AgentMeter is a VS Code/Cursor extension that shows how much AI
-coding quota you have **remaining**. It never combines unrelated provider
-limits into one misleading score.
+AgentMeter shows your **remaining** Cursor, Claude Code, and Codex quotas in
+VS Code and Cursor, across local and SSH workspaces. It never combines unrelated
+provider limits into one misleading score.
 
 The compact status bar looks like:
 
@@ -13,7 +13,16 @@ The compact status bar looks like:
 The sidebar shows full provider names, every available quota window, reset
 times, data sources, provider states, and last-updated timestamps.
 Usage refreshes every five minutes by default and whenever the editor regains
-focus. The interval can be changed in AgentMeter settings.
+focus. The interval can be changed in AgentMeter settings. Temporary collection
+failures are retried every 30 seconds while the extension host is running.
+
+Usage cards come first; provider status and setup controls are below them.
+During a temporary failure, a recent reading stays visible for up to 30 minutes
+in the same window, explicitly labeled **Last known** with its original timestamp.
+It describes the previous connection, not a confirmed current account reading.
+Fresh data replaces it automatically. Sign-out, setup changes, an empty response,
+or switching collection hosts clears that history. History stays in memory and
+is not restored after restarting the extension.
 
 ## Provider support
 
@@ -21,9 +30,10 @@ focus. The interval can be changed in AgentMeter settings.
   Cursor's local session read-only and requests current usage directly from
   Cursor. It is disabled by default because Cursor does not publish a stable
   personal usage API.
-- **Claude Code:** official status-line JSON is sanitized into a local cache.
+- **Claude Code:** official status-line JSON is sanitized into a cache on the
+  active workspace machine.
   Five-hour and seven-day limits are supported when Claude provides them.
-- **Codex:** the local Codex app-server reports the general rate limit's
+- **Codex:** the Codex app-server on the active workspace machine reports the general rate limit's
   windows. Model-specific limits are read but not shown. Authentication
   remains owned by the Codex CLI.
 
@@ -42,6 +52,7 @@ extra ports, or user-managed forwarding are needed.
 - **Cursor** always uses the desktop Cursor session, including in remote windows.
 - **Claude Code and Codex** use the account on the active workspace machine:
   your computer in a local window, or the SSH/remote machine in a remote window.
+  Remote windows skip unused desktop Claude and Codex collection.
 - There is always one card per tool. Quotas match when both machines use the
   same account; separate accounts are never combined or substituted for each other.
 - A remote provider that needs sign-in or setup shows that state, rather than
@@ -159,7 +170,7 @@ also writes the sanitized cache described above.
 - No mock collector is wired into production.
 - Cursor's private adapter is opt-in, read-only, HTTPS-only, and host-locked to
   `api2.cursor.sh`.
-- Claude and Codex authentication remain owned by their local tools.
+- Claude and Codex authentication remain owned by the tools on the machine where they run.
 - Webview content uses a restrictive Content Security Policy and escaped
   provider data.
 
@@ -198,8 +209,8 @@ src/
 Install a local build in Cursor:
 
 ```bash
-cursor --install-extension ./agentmeter-local-0.1.3.vsix
-cursor --install-extension ./agentmeter-0.1.3.vsix
+cursor --install-extension ./agentmeter-local-0.1.4.vsix
+cursor --install-extension ./agentmeter-0.1.4.vsix
 ```
 
 `npm run package` produces both VSIX files. For unpublished builds install the

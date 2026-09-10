@@ -135,6 +135,8 @@ export interface UsageQuotaModel {
 }
 
 export interface UsageCardModel {
+  /** Historical usage from this window's last connection, never a live account claim. */
+  readonly isPreviousReading?: boolean;
   readonly location?: UsageLocation;
   readonly locationLabel?: string;
   readonly tool: AiToolId;
@@ -149,6 +151,7 @@ export interface UsageCardModel {
 }
 
 export interface DashboardModel {
+  readonly refreshError?: string;
   readonly cards: readonly UsageCardModel[];
   readonly generatedAt: string;
 }

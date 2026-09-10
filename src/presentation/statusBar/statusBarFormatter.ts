@@ -33,7 +33,7 @@ export function formatStatusBar(dashboard: DashboardModel): StatusBarViewModel {
     }
 
     const hint = formatHeadlineHint(card, quota);
-    return `${card.name} ${formatPercentage(quota.remainingPercentage)}${hint}`;
+    return `${card.name} ${formatPercentage(quota.remainingPercentage)}${hint}${card.isPreviousReading ? ' (last known)' : ''}`;
   });
 
   return {
@@ -60,6 +60,9 @@ export function getPrimaryQuota(
  */
 function formatTooltip(dashboard: DashboardModel): string {
   const lines: string[] = [];
+  if (dashboard.refreshError) {
+    lines.push('Usage could not be refreshed. AgentMeter will retry automatically.', '');
+  }
 
   for (const card of dashboard.cards) {
     // The status bar item the hover belongs to already reads "AgentMeter",
@@ -96,7 +99,11 @@ function formatCardDetail(card: UsageCardModel): readonly string[] {
 
   // Plain text gives a row no visual grouping to lean on, so each one carries
   // its own countdown even where the sidebar shows a shared one once.
-  return card.quotas.map((quota) => formatQuotaDetail(quota, card.quotas));
+  return [
+    ...(card.isPreviousReading ? ['Last known usage from the previous connection; current account usage is not yet confirmed.',
+      `Last read: ${card.updatedAt ?? 'unknown'}.`] : []),
+    ...card.quotas.map((quota) => formatQuotaDetail(quota, card.quotas)),
+  ];
 }
 
 function formatQuotaDetail(

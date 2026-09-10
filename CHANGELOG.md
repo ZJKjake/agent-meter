@@ -2,9 +2,22 @@
 
 All notable AgentMeter changes are documented here.
 
-## 0.1.3
+## 0.1.4 — 2026-09-10
 
-### Source updates (not yet published)
+- Fix usage visibility in SSH and other remote workspaces. Cursor usage comes
+  from the desktop companion, while Claude Code and Codex usage comes from the
+  active remote account, so the correct account is shown in one card per tool.
+- Put usage cards before Provider status and setup controls.
+- Retain recent readings during temporary collection failures, clearly marked
+  Last known in the sidebar and status bar with the original timestamp. Keep
+  history in memory for at most 30 minutes; clear it on sign-out, setup changes,
+  empty responses, or a different collection host.
+- Retry temporary failures every 30 seconds and restore the configured refresh
+  interval after recovery. Prevent overlapping scheduled refreshes.
+- Isolate synchronous collector failures and time out stuck providers without
+  hiding other providers or starting duplicate collector processes.
+- Skip desktop Claude Code and Codex collection in remote windows. Continue
+  showing one card per tool using the active workspace account.
 
 - Resolve Cursor authentication from the current application data directory,
   including named editor profiles and custom user-data directories.
@@ -22,6 +35,8 @@ All notable AgentMeter changes are documented here.
   collection timeouts. Handle malformed or terminated Codex app-server processes.
 - Replay the latest usage after the sidebar finishes loading so early updates
   cannot leave the dashboard empty.
+
+## 0.1.3
 
 ### Published 2026-09-07
 

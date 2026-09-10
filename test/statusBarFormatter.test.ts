@@ -66,6 +66,13 @@ function dashboard(cards: readonly UsageCardModel[]): DashboardModel {
 }
 
 describe('status bar formatter', () => {
+  it('retains historical percentages with an explicit label and timestamp', () => {
+    const view = formatStatusBar(dashboard([card('codex', { providerState: 'stale', isPreviousReading: true })]));
+    expect(view.text).toContain('Codex 60% (last known)');
+    expect(view.tooltip).toContain('current account usage is not yet confirmed');
+    expect(view.tooltip).toContain('2026-08-20T11:00:00.000Z');
+    expect(view.severity).toBe('attention');
+  });
   it('formats one compact percentage per provider', () => {
     const view = formatStatusBar(
       dashboard([

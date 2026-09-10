@@ -61,3 +61,50 @@ describe('RefreshScheduler', () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 });
+
+it('retries temporary outages quickly and restores the configured interval after recovery', async () => {
+  vi.useFakeTimers();
+  try {
+    const refresh = vi.fn(async () => undefined);
+    const scheduler = new RefreshScheduler(refresh, 300_000);
+    scheduler.setRetrying(true);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    scheduler.setRetrying(true);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    scheduler.setRetrying(false);
+    await vi.advanceTimersByTimeAsync(299_999);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(refresh).toHaveBeenCalledTimes(3);
+    scheduler.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('does not overlap a slow refresh even after focus or configuration changes', async () => {
+  vi.useFakeTimers();
+  try {
+    let finish!: () => void;
+    const refresh = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const scheduler = new RefreshScheduler(refresh, 300_000);
+    scheduler.setRetrying(true);
+    scheduler.refreshNow();
+    await vi.advanceTimersByTimeAsync(90_000);
+    scheduler.refreshNow();
+    scheduler.restart(60_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    finish();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    scheduler.dispose();
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});

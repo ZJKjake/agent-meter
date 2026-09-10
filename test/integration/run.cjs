@@ -14,7 +14,7 @@ exports.run = async function (options = {}) {
   if (options.requirePackagedPath) {
     assert(packagedPathDetected, 'Load the packaged extension directory');
   }
-  const envelope = await vscode.commands.executeCommand('agentmeter.local.collect.v1');
+  const envelope = await vscode.commands.executeCommand('agentmeter.local.collect.v1', vscode.env.remoteName ? 'cursor-only' : undefined);
   assert.equal(envelope.version, 1);
   assert.equal(envelope.host, 'local');
   assert.deepEqual(envelope.snapshots.map((snapshot) => snapshot.tool), ['cursor', 'claude-code', 'codex']);
@@ -51,7 +51,7 @@ exports.run = async function (options = {}) {
     packagedPathDetected,
     mainBundleSha256: require('node:crypto').createHash('sha256').update(fs.readFileSync(require('node:path').join(extension.extensionPath, 'dist/extension.js'))).digest('hex'),
     dataProvenance: options.dataProvenance ?? 'unspecified; available state alone does not establish live account coverage',
-    cards: dashboard.cards.map(({ tool, location, providerState, quotas }) => ({ tool, location: location ?? 'local', state: providerState, quotaCount: quotas.length })),
+    cards: dashboard.cards.map(({ tool, location, providerState, quotas, isPreviousReading }) => ({ tool, location: location ?? 'local', state: providerState, quotaCount: quotas.length, isPreviousReading: Boolean(isPreviousReading) })),
     wiringPassed: true,
     requiredAvailable: options.requireAvailable ?? [],
     acceptancePassed: false,

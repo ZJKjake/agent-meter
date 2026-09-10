@@ -150,7 +150,7 @@ export function getWebviewContent(
       border: 1px solid var(--vscode-widget-border);
       border-left: 2px solid var(--vscode-textLink-foreground);
       border-radius: 9px;
-      margin-bottom: 12px;
+      margin-top: 12px;
       padding: 12px;
     }
 
@@ -610,6 +610,11 @@ export function getWebviewContent(
 
   <p class="intro">Your remaining AI quota, in one clean view.</p>
 
+  <main>
+    <h2 class="sr-only">Remaining AI quota by provider</h2>
+    <div class="cards" id="cards" aria-live="polite"></div>
+  </main>
+
   <section class="overview" aria-labelledby="overview-label" aria-live="polite">
     <div class="overview-top">
       <div>
@@ -620,11 +625,6 @@ export function getWebviewContent(
     </div>
     <div class="overview-meta" id="overview-meta">Reading usage from your connected providers.</div>
   </section>
-
-  <main>
-    <h2 class="sr-only">Remaining AI quota by provider</h2>
-    <div class="cards" id="cards" aria-live="polite"></div>
-  </main>
 
   <p class="privacy-note">Percentages always mean remaining quota and are never combined. Credentials stay with each provider.</p>
 
@@ -990,7 +990,7 @@ export function getWebviewContent(
               escapeHtml(getProviderActionLabel(card.tool, card.providerState)) +
             '</button>' +
           '</div>';
-      const staleActionMarkup = card.providerState === 'stale'
+      const staleActionMarkup = card.providerState === 'stale' && !card.isPreviousReading
         ? '<button class="secondary-button provider-action" type="button" data-provider="' + escapeHtml(card.tool) + '">' +
             escapeHtml(getProviderActionLabel(card.tool, card.providerState)) +
           '</button>'
@@ -1007,7 +1007,7 @@ export function getWebviewContent(
           '</div>' +
           '<span class="provider-state ' + escapeHtml(card.providerState) + '">' +
             '<span class="state-dot" aria-hidden="true"></span>' +
-            escapeHtml(getProviderStateLabel(card.providerState)) +
+            escapeHtml(card.isPreviousReading ? 'Last known' : getProviderStateLabel(card.providerState)) +
           '</span>' +
         '</div>' +
         primaryQuotaMarkup +
@@ -1041,7 +1041,7 @@ export function getWebviewContent(
       }
 
       const reportingCards = cards.filter(function(card) {
-        return card.providerState === 'available' || card.providerState === 'mock' || card.providerState === 'stale';
+        return !card.isPreviousReading && (card.providerState === 'available' || card.providerState === 'mock' || card.providerState === 'stale');
       });
       const attentionCount = Math.max(0, cards.length - reportingCards.length);
       overviewValueElement.textContent = reportingCards.length === cards.length && cards.length > 0
@@ -1050,6 +1050,12 @@ export function getWebviewContent(
       overviewMetaElement.textContent = attentionCount
         ? attentionCount + (attentionCount === 1 ? ' provider needs attention' : ' providers need attention') + ' · ' + formatUpdatedDate(dashboard.generatedAt)
         : 'All values show remaining quota · ' + formatUpdatedDate(dashboard.generatedAt);
+
+      if (dashboard.refreshError) {
+        overviewMetaElement.textContent = 'Connection interrupted · Retrying automatically · ' + formatUpdatedDate(dashboard.generatedAt);
+      } else if (cards.some(function(card) { return card.isPreviousReading || card.providerState === 'unavailable'; })) {
+        overviewMetaElement.textContent += ' · Retrying automatically';
+      }
 
       cardsElement.innerHTML = cards.length
         ? cards.map(renderProviderCard).join('')

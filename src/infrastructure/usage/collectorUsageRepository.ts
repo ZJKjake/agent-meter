@@ -1,4 +1,5 @@
 import {
+  AiToolId,
   ProviderSnapshot,
   UsageCollector,
   UsageRepository,
@@ -11,11 +12,22 @@ import {
  * usage from the other tools.
  */
 export class CollectorUsageRepository implements UsageRepository {
-  public constructor(private readonly collectors: readonly UsageCollector[]) {}
+  private readonly pending = new Map<UsageCollector, Promise<ProviderSnapshot>>();
 
-  public async getUsage(): Promise<readonly ProviderSnapshot[]> {
+  public constructor(
+    private readonly collectors: readonly UsageCollector[],
+    // Finish before the outer host transport's 20-second deadline.
+    private readonly timeoutMs = 18_000,
+  ) {}
+
+  public async getUsage(tools?: readonly AiToolId[]): Promise<readonly ProviderSnapshot[]> {
     const results = await Promise.allSettled(
-      this.collectors.map((collector) => collector.collect()),
+      this.collectors.map((collector) => tools && !tools.includes(collector.tool)
+        ? Promise.resolve<ProviderSnapshot>({
+          tool: collector.tool, state: 'unsupported', records: [],
+          message: 'Usage is collected in the active workspace.',
+        })
+        : this.collect(collector)),
     );
 
     return results.map((result, index) => {
@@ -28,8 +40,30 @@ export class CollectorUsageRepository implements UsageRepository {
         tool: collector.tool,
         state: 'unavailable',
         records: [],
-        message: 'The usage collector failed to return data.',
+        message: 'Usage is temporarily unavailable. AgentMeter will retry automatically.',
       };
     });
+  }
+
+  private async collect(collector: UsageCollector): Promise<ProviderSnapshot> {
+    let pending = this.pending.get(collector);
+    if (!pending) {
+      // Deferring also catches synchronous failures from a collector.
+      pending = Promise.resolve().then(() => collector.collect()).finally(() => {
+        this.pending.delete(collector);
+      });
+      this.pending.set(collector, pending);
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        pending,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Provider collection timed out.')), this.timeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
